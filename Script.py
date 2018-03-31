@@ -133,7 +133,8 @@ def value_parser(list1):
 			line +='%s,'%i
 		value='{%s}'%line[:-1]
 	else:
-		value = hex(int(list1[-1], 16))  #parser Others
+		value = "0x%01x"%int(list1[-1], 16)
+#		value = hex(int(list1[-1], 16))  #parser Others
 	return value
 	
 #output the result
@@ -169,11 +170,12 @@ def output(mapfile,lstfile,configfile,outputfile):
 				for c_offset, c_name, c_guid, c_value, c_help in section[1:]:
 					if (name_format.findall(name)[1] == c_name) and (str.lower(guid) == str.lower(c_guid)):
 						if c_offset in dict_lst.keys():
-							try:
-								int(c_value,16)
-								line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset], c_value)
-							except ValueError,e:
-								line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset][:-3], c_value)
+							line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset], c_value)
+#							try:
+#								int(c_value,16)
+#								line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset], c_value)
+#							except ValueError,e:
+#								line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset][:-3], c_value)
 							info.append(line)
 						else:
 							line = 'offset=%d | help=%s\n' % (c_offset, c_help)
