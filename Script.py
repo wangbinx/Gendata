@@ -2,6 +2,8 @@
 import re
 from optparse import OptionParser
 
+
+guidfile = "Guid.xref"
 #Parser .map file,return list[Pcd_name,struct,name,guid]
 def map_parser(filename):
 	mapinfo=[];block_dict={}
@@ -112,7 +114,19 @@ def section_parser(section):
 				text = offset, name[0], guid[0], value,help[0]
 				part.append(text)
 	return(part)	
-	
+
+def guid_parser(guidfile):
+	guiddict={}
+	with open(guidfile,'r') as guid:
+		lines = guid.readlines()
+	for line in lines:
+		list=line.strip().split(' ')
+		if list:
+			if len(list)>1:
+				guiddict[list[0].upper()]=list[1]
+			elif list[0] != ''and len(list)==1:
+				print "Error:line %s can't be parser in %s"%(line.strip(),guidfile)
+	return guiddict
 
 def value_parser(list1):
 	list1 = [t for t in list1 if t != ''] #remove '' form list
@@ -142,6 +156,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 	config_value = config_parser(configfile)
 	map_value = map_parser(mapfile)
 	name_format = re.compile(r'(\w+)')
+	guiddict = guid_parser(guidfile)
 	notmatch= []
 	tmplist=[];
 	id_dict=map_value[0]
@@ -149,7 +164,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 		all=[]
 		module=i[0]
 		for mapinfo in i[1:]:
-			pcdname = mapinfo[0];struct = mapinfo[1];name = mapinfo[2];guid = mapinfo[3]
+			pcdname = mapinfo[0];struct = mapinfo[1];name = mapinfo[2];guid = guiddict[mapinfo[3].upper()]
 			dict_lst = lst_parser(lstfile, struct)
 			for section in config_value:
 				tmp = '';default_info=[];info=[]
@@ -168,7 +183,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 				line1 = '%s|%s|%s|0x00\n' % (pcdname, name, guid)
 				info.append(line1)
 				for c_offset, c_name, c_guid, c_value, c_help in section[1:]:
-					if (name_format.findall(name)[1] == c_name) and (str.lower(guid) == str.lower(c_guid)):
+					if (name_format.findall(name)[1] == c_name) and (guid == guiddict[c_guid.upper()]):
 						if c_offset in dict_lst.keys():
 							line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset], c_value)
 #							try:
