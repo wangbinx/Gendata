@@ -2,6 +2,14 @@
 import re
 from optparse import OptionParser
 
+statement='''[SkuIds]
+  0|DEFAULT              # The entry: 0|DEFAULT is reserved and always required.
+
+[DefaultStores]
+  0|STANDARD             # UEFI Standard default  0|STANDARD is reserved.
+  1|MANUFACTURING        # UEFI Manufacturing default 1|MANUFACTURING is reserved.
+  '''
+
 
 guidfile = "Guid.xref"
 #Parser .map file,return list[Pcd_name,struct,name,guid]
@@ -38,14 +46,14 @@ def map_parser(filename):
 	return	block_dict,mapinfo
 
 #Parser .lst file,return dict{offset:filename}
-def lst_parser(filename, value):
+def lst_parser(filename, struct):
 	name_re = re.compile('(\w+)')
-	struct_format = re.compile(r'%s {.*?;' % value, re.S)
+	struct_format = re.compile(r'%s {.*?;' % struct, re.S)
 	info = {};text = ''
 	for y in filename:
 		with open(y, 'r') as f:
 			read = f.read()
-		text +=read
+		text +=read  #merge all .lst info
 	context = struct_format.search(text)
 	if context:
 		text = context.group().split('+')
@@ -70,34 +78,41 @@ def config_parser(filename):
 	ids_re =re.compile('_ID:(.*)')
 	id_re= re.compile('\s+')
 	info = []
+	info_dict={}
 	with open(filename, 'r') as text:
 		read = text.read()
 	if 'DEFAULT_ID:' in read:
 		all = read.split('DEFAULT')
 		for i in all[1:]:
 			id = [];part = [] #save all infomation for DEFAULT_ID
+			str_id=''
 			ids = ids_re.findall(i)
 			for m in ids:
 				tmp=id_re.sub('',m)
 				id.append(tmp)
+				str_id +=tmp
 			part.append(id)
 			section = i.split('\nQ') #split with '\nQ ' to get every block
 			part +=section_parser(section)
+			info_dict[str_id] = section_parser(section)
 			info.append(part)
 	else:
 		part = []
 		id=('0','0')
+		str_id='10'
 		part.append(id)
 		section = read.split('\nQ')
 		part +=section_parser(section)
+		info_dict[str_id] = section_parser(section)
 		info.append(part)
 	return info
 
 def section_parser(section):
-	offset_re = re.compile(r'offset = (.*)')
-	name_re = re.compile(r'name = (.*)')
-	guid_re = re.compile(r'guid = (.*)')
+	offset_re = re.compile(r'offset=(\w+)')
+	name_re = re.compile(r'name=(\S+)')
+	guid_re = re.compile(r'guid=(\S+)')
 	help_re = re.compile(r'help = (.*)')
+	attribute_re=re.compile(r'attribute=(\w+)')
 	value_re = re.compile(r'(//.*)')
 	part = []
 	for x in section[1:]:
@@ -105,10 +120,11 @@ def section_parser(section):
 			line=value_re.sub('',line) #delete \\... in "Q...." line
 			list1=line.split(' ')
 			value=value_parser(list1)
-			offset = offset_re.findall(x)
-			name = name_re.findall(x)
-			guid = guid_re.findall(x)
-			if offset and name and guid and value:
+			offset = offset_re.findall(x.replace(' ',''))
+			name = name_re.findall(x.replace(' ',''))
+			guid = guid_re.findall(x.replace(' ',''))
+			attribute =attribute_re.findall(x.replace(' ',''))
+			if offset and name and guid and value and attribute:
 				offset = int(offset[0], 16)
 				help = help_re.findall(x)
 				text = offset, name[0], guid[0], value,help[0]
@@ -180,7 +196,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 					tmp +=txt
 				line='\n[%s]\n'%tmp[0:-1]
 				info.append(line)
-				line1 = '%s|%s|%s|0x00\n' % (pcdname, name, guid)
+				line1 = '******%s|%s|%s|0x00\n' % (pcdname, name, guid)
 				info.append(line1)
 				for c_offset, c_name, c_guid, c_value, c_help in section[1:]:
 					if (name_format.findall(name)[1] == c_name) and (guid == guiddict[c_guid.upper()]):
@@ -214,6 +230,7 @@ def writefile(match,notmatch,outputfile):
 			Data[item[0]].append(data)
 	if Data:
 		output = open(outputfile, 'wb')
+		output.write(statement)
 		for line in Data:
 			output.write(line)
 			for x in Data[line]:
