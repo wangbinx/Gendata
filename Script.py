@@ -54,6 +54,7 @@ def lst_parser(filename, struct):
 		with open(y, 'r') as f:
 			read = f.read()
 		text +=read  #merge all .lst info
+	#parser struct
 	context = struct_format.search(text)
 	if context:
 		text = context.group().split('+')
@@ -71,11 +72,14 @@ def lst_parser(filename, struct):
 				else:
 					offset = int(line[0], 10);name = line[2]
 					info[offset] = name
+	#parser "efivarstore", get struce and name
+	for i in text:
+
 	return info
 
 #Parser .config file,return list[offset,name,guid,value,help]
 def config_parser(filename):
-	ids_re =re.compile('_ID:(.*)')
+	ids_re =re.compile('_ID:(\d+)',re.S)
 	id_re= re.compile('\s+')
 	info = []
 	info_dict={}
@@ -84,22 +88,21 @@ def config_parser(filename):
 	if 'DEFAULT_ID:' in read:
 		all = read.split('DEFAULT')
 		for i in all[1:]:
-			id = [];part = [] #save all infomation for DEFAULT_ID
+			part = [] #save all infomation for DEFAULT_ID
 			str_id=''
-			ids = ids_re.findall(i)
+			ids = ids_re.findall(i.replace(' ',''))
 			for m in ids:
-				tmp=id_re.sub('',m)
-				id.append(tmp)
-				str_id +=tmp
-			part.append(id)
+				str_id +=m
+			part.append(ids)
 			section = i.split('\nQ') #split with '\nQ ' to get every block
 			part +=section_parser(section)
 			info_dict[str_id] = section_parser(section)
+			#print info_dict
 			info.append(part)
 	else:
 		part = []
 		id=('0','0')
-		str_id='10'
+		str_id='00'
 		part.append(id)
 		section = read.split('\nQ')
 		part +=section_parser(section)
@@ -111,7 +114,7 @@ def section_parser(section):
 	offset_re = re.compile(r'offset=(\w+)')
 	name_re = re.compile(r'name=(\S+)')
 	guid_re = re.compile(r'guid=(\S+)')
-	help_re = re.compile(r'help = (.*)')
+#	help_re = re.compile(r'help = (.*)')
 	attribute_re=re.compile(r'attribute=(\w+)')
 	value_re = re.compile(r'(//.*)')
 	part = []
@@ -126,11 +129,13 @@ def section_parser(section):
 			attribute =attribute_re.findall(x.replace(' ',''))
 			if offset and name and guid and value and attribute:
 				offset = int(offset[0], 16)
-				help = help_re.findall(x)
-				text = offset, name[0], guid[0], value,help[0]
+#				help = help_re.findall(x)
+				text = offset, name[0], guid[0], value, attribute[0]
 				part.append(text)
 	return(part)	
 
+#parser Guid file, get guid name form guid value
+#return guid find info
 def guid_parser(guidfile):
 	guiddict={}
 	with open(guidfile,'r') as guid:
@@ -166,7 +171,22 @@ def value_parser(list1):
 		value = "0x%01x"%int(list1[-1], 16)
 #		value = hex(int(list1[-1], 16))  #parser Others
 	return value
-	
+
+def ID_name(ID,flag):
+	platform_dict={0:'DEFAULT'}
+	default_dict={0:'STANDARD',1:'MANUFACTURING'}
+	if flag == "PLATFORM_ID":
+		try:
+			value=platform_dict[ID]
+		except KeyError:
+			value = 'SKUID%d'%ID
+	elif flag == 'DEFAULT_ID':
+		try:
+			value= default_dict[ID]
+		except KeyError:
+			value = 'DEFAULTID%d'%ID
+	return value
+
 #output the result
 def output(mapfile,lstfile,configfile,outputfile):
 	config_value = config_parser(configfile)
@@ -175,6 +195,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 	guiddict = guid_parser(guidfile)
 	notmatch= []
 	tmplist=[];
+	attribute_dict={'0x3':'NV, BS','0x7':'NV, BS, RT'}
 	id_dict=map_value[0]
 	for i in map_value[1]:
 		all=[]
@@ -198,7 +219,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 				info.append(line)
 				line1 = '******%s|%s|%s|0x00\n' % (pcdname, name, guid)
 				info.append(line1)
-				for c_offset, c_name, c_guid, c_value, c_help in section[1:]:
+				for c_offset, c_name, c_guid, c_value, c_attribute in section[1:]:
 					if (name_format.findall(name)[1] == c_name) and (guid == guiddict[c_guid.upper()]):
 						if c_offset in dict_lst.keys():
 							line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset], c_value)
@@ -209,7 +230,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 #								line = '%s.%s|%s\n' % (pcdname, dict_lst[c_offset][:-3], c_value)
 							info.append(line)
 						else:
-							line = 'offset=%d | help=%s\n' % (c_offset, c_help)
+							line = 'offset=%d | %s\n' % (c_offset,c_guid)
 							notmatch.append(line)
 				all.append(info)
 	writefile(all,notmatch,outputfile)
