@@ -114,7 +114,7 @@ def mainprocess(Config,Lst):
 	print statement
 	keys=sorted(config_dict.keys())
 	for id in keys:
-		print ""
+		print eval_id(id)
 		for section in config_dict[id]:
 			c_offset,c_name,c_guid,c_value,c_attribute = section
 			#print c_offset,c_name,c_guid,c_value,c_attribute
@@ -198,8 +198,14 @@ def config_parser(filename):
 	return info_dict
 
 def eval_id(id):
-	for i in len(id):
-		info='%s.common.%s.%s,'%(SECTION,ID_name(id),1)
+	len_id=len(id)
+	default_id=id[0:len(id)/2]
+	platform_id=id[len(id)/2:]
+	text=''
+	#info='%s.common.%s.%s,'%(SECTION,platform_id,default_id)
+	for i in range(len(default_id)):
+		text +="%s.common.%s.%s,"%(SECTION,ID_name(platform_id[i],'PLATFORM'),ID_name(default_id[i],'DEFAULT'))
+	return '[%s]'%text[:-1]
 
 
 def section_parser(section):
@@ -265,19 +271,19 @@ def value_parser(list1):
 	return value
 
 def ID_name(ID,flag):
-	platform_dict={0:'DEFAULT'}
-	default_dict={0:'STANDARD',1:'MANUFACTURING'}
+	platform_dict={'0':'DEFAULT'}
+	default_dict={'0':'STANDARD','1':'MANUFACTURING'}
 	if flag == "PLATFORM":
 		try:
 			value=platform_dict[ID]
 		except KeyError:
-			value = 'SKUID%d'%ID
+			value = 'SKUID%s'%ID
 	elif flag == 'DEFAULT':
 		try:
 			value= default_dict[ID]
 		except KeyError:
-			value = 'DEFAULTID%d'%ID
-		return value
+			value = 'DEFAULTID%s'%ID
+	return value
 
 #output the result
 def output(mapfile,lstfile,configfile,outputfile):
@@ -386,7 +392,3 @@ def main():
 
 if __name__=='__main__':
 	main()
-	#lst_parser(['FpgaSktSetupForms.lst','SocketSetupForms.lst'],'xxxx')
-	#x=parser_lst(['FpgaSktSetupForms.lst','SocketSetupForms.lst'])
-	#efi_dict=x.efivarstore_parser()
-	#x.struct_parser()
