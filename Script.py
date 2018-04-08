@@ -10,6 +10,9 @@ statement='''[SkuIds]
   1|MANUFACTURING        # UEFI Manufacturing default 1|MANUFACTURING is reserved.
   '''
 
+SECTION='PcdsDynamicHii'
+PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
+attribute_dict={'0x3':'NV, BS','0x7':'NV, BS, RT'}
 
 guidfile = "Guid.xref"
 #Parser .map file,return list[Pcd_name,struct,name,guid]
@@ -45,17 +48,104 @@ def map_parser(filename):
 				mapinfo.append(infolist)
 	return	block_dict,mapinfo
 
+class parser_lst(object):
+
+	def __init__(self,filelist):
+		self.file=filelist
+		self.text=self.megre_lst()
+		#self.struct=self.efivarstore_parser().values()
+
+	def megre_lst(self):
+		alltext=''
+		for file in self.file:
+			with open(file,'r') as f:
+				read =f.read()
+			alltext += read
+		return alltext
+
+	def struct_parser(self,struct):
+		name_re = re.compile('(\w+)')
+		struct_format = re.compile(r'%s {.*?;' % struct, re.S)
+		info = {}
+		context = struct_format.search(self.text)
+		if context:
+			text = context.group().split('+')
+			for line in text[1:]:
+				line = name_re.findall(line)
+				if line:
+					if len(line) == 5:
+						offset = int(line[0], 10)
+						name = line[2] + '[0]'
+						info[offset] = name
+						uint = int(re.search('\d+', line[4]).group(0), 10)
+						bit = uint / 8
+						for i in range(1, int(line[3], 10)):
+							offset += bit
+							name = line[2] + '[%s]' % i
+							info[offset] = name
+					else:
+						offset = int(line[0], 10)
+						name = line[2]
+						info[offset] = name
+		return info
+
+	def efivarstore_parser(self):
+		efivarstore_format = re.compile(r'efivarstore.*?;', re.S)
+		efitxt = efivarstore_format.findall(self.text)
+		struct_re = re.compile(r'efivarstore(.*?),',re.S)
+		name_re = re.compile(r'name=(\w+)')
+		efivarstore_dict={}
+		for i in efitxt:
+			struct = struct_re.findall(i.replace(' ',''))
+			name = name_re.findall(i.replace(' ',''))
+			if struct and name:
+				efivarstore_dict[name[0]]=struct[0]
+			else:
+				print "Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx"
+		return efivarstore_dict
+
+	def matchoffset(self,offset):
+		pass
+
+def mainprocess(Config,Lst):
+	config_dict=config_parser(Config) #get {'00':[offset,name,guid,value,attribute]...,'10':....}
+	lst=parser_lst(Lst)
+	efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
+	print statement
+	keys=sorted(config_dict.keys())
+	for id in keys:
+		print ""
+		for section in config_dict[id]:
+			c_offset,c_name,c_guid,c_value,c_attribute = section
+			#print c_offset,c_name,c_guid,c_value,c_attribute
+			if efi_dict.has_key(c_name):
+				struct = efi_dict[c_name]
+				struct_dict = lst.struct_parser(struct) #get{offset:offset_name}
+				if struct_dict.has_key(c_offset):
+					offset_name=struct_dict[c_offset]
+					info = "%s%s.%s|%s"%(PCD_NAME,c_name,offset_name,c_value)
+					print info
+				else:
+					print "Can't find offset %s with name %s in %s"%(c_offset,c_name,Lst)
+			else:
+				print "Can't find name %s in %s"%(c_name,Lst)
+
+
+
+
+
 #Parser .lst file,return dict{offset:filename}
 def lst_parser(filename, struct):
 	name_re = re.compile('(\w+)')
 	struct_format = re.compile(r'%s {.*?;' % struct, re.S)
-	info = {};text = ''
+	efivarstore_format = re.compile(r'efivarstore.*?;', re.S)
+	info = {};alltext = ''
 	for y in filename:
 		with open(y, 'r') as f:
 			read = f.read()
-		text +=read  #merge all .lst info
+		alltext +=read  #merge all .lst info
 	#parser struct
-	context = struct_format.search(text)
+	context = struct_format.search(alltext)
 	if context:
 		text = context.group().split('+')
 		for line in text[1:]:
@@ -72,9 +162,6 @@ def lst_parser(filename, struct):
 				else:
 					offset = int(line[0], 10);name = line[2]
 					info[offset] = name
-	#parser "efivarstore", get struce and name
-	for i in text:
-
 	return info
 
 #Parser .config file,return list[offset,name,guid,value,help]
@@ -108,7 +195,12 @@ def config_parser(filename):
 		part +=section_parser(section)
 		info_dict[str_id] = section_parser(section)
 		info.append(part)
-	return info
+	return info_dict
+
+def eval_id(id):
+	for i in len(id):
+		info='%s.common.%s.%s,'%(SECTION,ID_name(id),1)
+
 
 def section_parser(section):
 	offset_re = re.compile(r'offset=(\w+)')
@@ -175,17 +267,17 @@ def value_parser(list1):
 def ID_name(ID,flag):
 	platform_dict={0:'DEFAULT'}
 	default_dict={0:'STANDARD',1:'MANUFACTURING'}
-	if flag == "PLATFORM_ID":
+	if flag == "PLATFORM":
 		try:
 			value=platform_dict[ID]
 		except KeyError:
 			value = 'SKUID%d'%ID
-	elif flag == 'DEFAULT_ID':
+	elif flag == 'DEFAULT':
 		try:
 			value= default_dict[ID]
 		except KeyError:
 			value = 'DEFAULTID%d'%ID
-	return value
+		return value
 
 #output the result
 def output(mapfile,lstfile,configfile,outputfile):
@@ -194,7 +286,7 @@ def output(mapfile,lstfile,configfile,outputfile):
 	name_format = re.compile(r'(\w+)')
 	guiddict = guid_parser(guidfile)
 	notmatch= []
-	tmplist=[];
+	tmplist=[]
 	attribute_dict={'0x3':'NV, BS','0x7':'NV, BS, RT'}
 	id_dict=map_value[0]
 	for i in map_value[1]:
@@ -202,7 +294,9 @@ def output(mapfile,lstfile,configfile,outputfile):
 		module=i[0]
 		for mapinfo in i[1:]:
 			pcdname = mapinfo[0];struct = mapinfo[1];name = mapinfo[2];guid = guiddict[mapinfo[3].upper()]
+			#lst=parser_lst(lstfile,struct)
 			dict_lst = lst_parser(lstfile, struct)
+			#dict_lst = lst.struct_parser()
 			for section in config_value:
 				tmp = '';default_info=[];info=[]
 				DefaultStores = section[0][0];SkuIds = section[0][1]
@@ -279,7 +373,8 @@ def main():
 		if options.lst:
 			if options.config:
 				if options.output:
-					output(options.map,options.lst,options.config,options.output)
+					#output(options.map,options.lst,options.config,options.output)
+					mainprocess(options.config,options.lst)
 				else:
 					print 'Error command, use -h for help'
 			else:
@@ -291,3 +386,7 @@ def main():
 
 if __name__=='__main__':
 	main()
+	#lst_parser(['FpgaSktSetupForms.lst','SocketSetupForms.lst'],'xxxx')
+	#x=parser_lst(['FpgaSktSetupForms.lst','SocketSetupForms.lst'])
+	#efi_dict=x.efivarstore_parser()
+	#x.struct_parser()
