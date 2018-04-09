@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/python
-import re
+import re,os,sys
 from optparse import OptionParser
 
 statement='''[SkuIds]
@@ -8,45 +8,14 @@ statement='''[SkuIds]
 [DefaultStores]
   0|STANDARD             # UEFI Standard default  0|STANDARD is reserved.
   1|MANUFACTURING        # UEFI Manufacturing default 1|MANUFACTURING is reserved.
-  '''
+'''
 
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
 attribute_dict={'0x3':'NV, BS','0x7':'NV, BS, RT'}
 
-guidfile = "Guid.xref"
-#Parser .map file,return list[Pcd_name,struct,name,guid]
-def map_parser(filename):
-	mapinfo=[];block_dict={}
-	sub_re=re.compile('# (\w.*)')
-	sub2_re=re.compile('(\S*])')
-	block_re=re.compile('(\S*)\]')
-	name_re=re.compile('(\d)\|(\S*)?')
-	with open(filename,'r') as text:
-		read=text.read()
-	read=sub_re.sub(' ',read)
-	block=read.split('[')
-	for i in block:
-		infolist = [];id={}
-		block_name=block_re.findall(i)
-		num_name=name_re.findall(i)
-		if block_name:
-			if num_name:
-				for m in num_name:
-					id[m[0]]= m[1]
-				block_dict[block_name[0]] = id
-			else:
-				infolist.append(block_name[0])
-				moduleinfo=sub2_re.sub(' ',i)
-				one=moduleinfo.split('\n')
-				for n in one:
-					if n != ' 'and n !='':
-						info=n.split('|')
-						Pcd_name=info[0];struct=info[1];name=info[2];guid=info[3]
-						text =Pcd_name,struct,name,guid
-						infolist.append(text)
-				mapinfo.append(infolist)
-	return	block_dict,mapinfo
+guidfile='Guid.xref'
+outflag = 0
 
 class parser_lst(object):
 
@@ -67,9 +36,9 @@ class parser_lst(object):
 		name_re = re.compile('(\w+)')
 		struct_format = re.compile(r'%s {.*?;' % struct, re.S)
 		info = {}
-		context = struct_format.search(self.text)
-		if context:
-			text = context.group().split('+')
+		content = struct_format.search(self.text)
+		if content:
+			text = content.group().split('+')
 			for line in text[1:]:
 				line = name_re.findall(line)
 				if line:
@@ -107,32 +76,59 @@ class parser_lst(object):
 	def matchoffset(self,offset):
 		pass
 
-def mainprocess(Config,Lst):
+def mainprocess(Guid,Config,Lst,Output):
 	config_dict=config_parser(Config) #get {'00':[offset,name,guid,value,attribute]...,'10':....}
 	lst=parser_lst(Lst)
 	efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
-	print statement
+	add=write2file(Output)
+	add.add2file(statement)
 	keys=sorted(config_dict.keys())
+	title_list=[]
+	info_list=[]
 	for id in keys:
-		print eval_id(id)
+		tmp_id=[id] #['00',[(struct,[name...]),(struct,[name...])]]
+		tmp_info={} #{name:struct}
+		add.add2file(eval_id(id))
 		for section in config_dict[id]:
 			c_offset,c_name,c_guid,c_value,c_attribute = section
-			#print c_offset,c_name,c_guid,c_value,c_attribute
 			if efi_dict.has_key(c_name):
 				struct = efi_dict[c_name]
+				title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid_parser(c_guid,Guid),attribute_dict[c_attribute])
 				struct_dict = lst.struct_parser(struct) #get{offset:offset_name}
 				if struct_dict.has_key(c_offset):
 					offset_name=struct_dict[c_offset]
-					info = "%s%s.%s|%s"%(PCD_NAME,c_name,offset_name,c_value)
-					print info
+					info = "%s%s.%s|%s\n"%(PCD_NAME,c_name,offset_name,c_value)
+					#print info
+					tmp_info[info]=title
 				else:
 					print "Can't find offset %s with name %s in %s"%(c_offset,c_name,Lst)
 			else:
 				print "Can't find name %s in %s"%(c_name,Lst)
+		tmp_id.append(reverse_dict(tmp_info).items())
+		id,tmp_title_list,tmp_info_list = read_list(tmp_id)
+		title_list +=tmp_title_list
+		info_list.append(tmp_info_list)
+	title_all=list(set(title_list))
+	add.add2file(title_all)
+	add.add2file(info_list)
 
+def reverse_dict(dict):
+	data={}
+	for i in dict.items():
+		if i[1] not in data.keys():
+			data[i[1]]=[i[0]]
+		else:
+			data[i[1]].append(i[0])
+	return data
 
-
-
+def read_list(list):
+	title_list=[]
+	info_list=[]
+	for i in list[1]:
+		title_list.append(i[0])
+		for j in i[1]:
+			info_list.append(j)
+	return list[0],title_list,info_list
 
 #Parser .lst file,return dict{offset:filename}
 def lst_parser(filename, struct):
@@ -145,9 +141,9 @@ def lst_parser(filename, struct):
 			read = f.read()
 		alltext +=read  #merge all .lst info
 	#parser struct
-	context = struct_format.search(alltext)
-	if context:
-		text = context.group().split('+')
+	content = struct_format.search(alltext)
+	if content:
+		text = content.group().split('+')
 		for line in text[1:]:
 			line = name_re.findall(line)
 			if line:
@@ -205,8 +201,7 @@ def eval_id(id):
 	#info='%s.common.%s.%s,'%(SECTION,platform_id,default_id)
 	for i in range(len(default_id)):
 		text +="%s.common.%s.%s,"%(SECTION,ID_name(platform_id[i],'PLATFORM'),ID_name(default_id[i],'DEFAULT'))
-	return '[%s]'%text[:-1]
-
+	return '\n[%s]\n'%text[:-1]
 
 def section_parser(section):
 	offset_re = re.compile(r'offset=(\w+)')
@@ -234,10 +229,10 @@ def section_parser(section):
 
 #parser Guid file, get guid name form guid value
 #return guid find info
-def guid_parser(guidfile):
+def guid_parser(guid,guidfile):
 	guiddict={}
-	with open(guidfile,'r') as guid:
-		lines = guid.readlines()
+	with open(guidfile,'r') as file:
+		lines = file.readlines()
 	for line in lines:
 		list=line.strip().split(' ')
 		if list:
@@ -245,7 +240,11 @@ def guid_parser(guidfile):
 				guiddict[list[0].upper()]=list[1]
 			elif list[0] != ''and len(list)==1:
 				print "Error:line %s can't be parser in %s"%(line.strip(),guidfile)
-	return guiddict
+	if guiddict.has_key(guid.upper()):
+		return guiddict[guid.upper()]
+	else:
+		print  "GUID %s not found in file %s"%(guid, guidfile)
+		return guid
 
 def value_parser(list1):
 	list1 = [t for t in list1 if t != ''] #remove '' form list
@@ -284,6 +283,42 @@ def ID_name(ID,flag):
 		except KeyError:
 			value = 'DEFAULTID%s'%ID
 	return value
+
+class write2file(object):
+
+	def __init__(self,Output):
+		self.output=Output
+		self.text=''
+
+	def add2file(self,content):
+		global outflag
+		if not outflag:
+			if os.path.exists(self.output):
+				os.remove(self.output)
+				outflag = 1
+		with open(self.output,'a+') as file:
+			file.write(self.__gen(content))
+
+	def __gen(self,content):
+		if type(content) == type(''):
+			return content
+		elif type(content) == type([0,0])or type(content) == type((0,0)):
+			return self.__readlist(content)
+		elif type(content) == type({0:0}):
+			return self.__readdict(content)
+
+	def __readlist(self,list):
+		for i in list:
+			if type(i) == type([0,0])or type(i) == type((0,0)):
+				self.__readlist(i)
+			elif type(i) == type('') :
+				self.text +=i
+		return self.text
+
+	def __readdict(self,dict):
+		content=dict.items()
+		return self.__readlist(content)
+
 
 #output the result
 def output(mapfile,lstfile,configfile,outputfile):
@@ -370,17 +405,17 @@ def writefile(match,notmatch,outputfile):
 def main():
 	usage="Script.py [-m <map file>][-l <lst file>/<lst file list>][-c <config file>][-o <output file>]"
 	parser = OptionParser(usage)
-	parser.add_option('-m','--map',metavar='FILENAME',dest='map',help="Input the '.map' file")
+	parser.add_option('-g','--guid',metavar='FILENAME',dest='guid',help="Input the guid file")
 	parser.add_option('-l','--lst',metavar='FILENAME',action='append',dest='lst',help="Input the '.lst' file, if multiple files, please use ',' to split")
 	parser.add_option('-c','--config',metavar='FILENAME',dest='config',help="Input the '.config' file")
 	parser.add_option('-o','--output',metavar='FILENAME',dest='output')
 	(options,args)=parser.parse_args()
-	if options.map:
+	if options.guid:
 		if options.lst:
 			if options.config:
 				if options.output:
 					#output(options.map,options.lst,options.config,options.output)
-					mainprocess(options.config,options.lst)
+					mainprocess(options.guid,options.config,options.lst,options.output)
 				else:
 					print 'Error command, use -h for help'
 			else:
