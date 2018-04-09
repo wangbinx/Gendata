@@ -292,6 +292,7 @@ class write2file(object):
 
 	def add2file(self,content):
 		global outflag
+		self.text = ''
 		if not outflag:
 			if os.path.exists(self.output):
 				os.remove(self.output)
