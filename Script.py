@@ -13,7 +13,6 @@ statement='''[SkuIds]
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
 attribute_dict={'0x3':'NV, BS','0x7':'NV, BS, RT'}
-outflag = 0
 
 class parser_lst(object):
 
@@ -332,13 +331,10 @@ def ID_name(ID,flag):
 class write2file(object):
 
 	def __init__(self,Output):
-		global outflag
 		self.output=Output
 		self.text=''
-		if not outflag:
-			if os.path.exists(self.output):
-				os.remove(self.output)
-				outflag = 1
+		if os.path.exists(self.output):
+			os.remove(self.output)
 
 	def add2file(self,content):
 		self.text = ''
