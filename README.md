@@ -2,12 +2,12 @@
 Generation data and create dsc file
 
 
-Usage: Script.py [-m <map file>][-l <lst file>][-c <config file>][-o <output file>]
+Usage: Script.py [-g <Guid file>][-l <lst file>][-c <config file>][-o <output file>]
 
 Options:
   -h, --help            show this help message and exit
-  -m FILENAME, --map=FILENAME
-                        Input the '.map' file
+  -g FILENAME, --guid=FILENAME
+                        Input the guid file
   -l FILENAME, --lst=FILENAME
                         Input the '.lst' file, if multiple files, please use
                         more "-l xxx.lst" option
