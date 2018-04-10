@@ -119,10 +119,10 @@ class mainprocess(object):
 	def write_all(self):
 		title_flag=1
 		info_flag=1
-		conf = Config(self.Config)
-		ids,title,info=self.mainprocess()
 		write = write2file(self.Output)
 		write.add2file(statement)
+		conf = Config(self.Config)
+		ids,title,info=self.mainprocess()
 		for id in ids:
 			write.add2file(conf.eval_id(id))
 			if title_flag:
@@ -332,16 +332,16 @@ def ID_name(ID,flag):
 class write2file(object):
 
 	def __init__(self,Output):
+		global outflag
 		self.output=Output
 		self.text=''
-
-	def add2file(self,content):
-		global outflag
-		self.text = ''
 		if not outflag:
 			if os.path.exists(self.output):
 				os.remove(self.output)
 				outflag = 1
+
+	def add2file(self,content):
+		self.text = ''
 		with open(self.output,'a+') as file:
 			file.write(self.__gen(content))
 
