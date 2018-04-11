@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/python
-import re,os,datetime
+import re,os,datetime,thread
 from optparse import OptionParser
 
 statement='''[SkuIds]
@@ -12,7 +12,6 @@ statement='''[SkuIds]
 
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
-attribute_dict={'0x3':'NV, BS','0x7':'NV, BS, RT'}
 
 class parser_lst(object):
 
@@ -28,38 +27,49 @@ class parser_lst(object):
 			alltext += read
 		return alltext
 
-	def struct_parser(self,struct):
+	def struct(self):
+		_ignore=['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16', 'UINT32', 'UINT64']
+		name_format = re.compile(r'(?<!typedef)\s+struct (\w+) {.*?;', re.S)
 		name_re = re.compile('(\w+)')
-		struct_format = re.compile(r'%s {.*?;' % struct, re.S)
 		info = {}
-		content = struct_format.search(self.text)
-		if content:
-			text = content.group().split('+')
-			for line in text[1:]:
-				line = name_re.findall(line)
-				if line:
-					if len(line) == 5:
-						offset = int(line[0], 10)
-						name = line[2] + '[0]'
-						info[offset] = name
-						uint = int(re.search('\d+', line[4]).group(0), 10)
-						bit = uint / 8
-						for i in range(1, int(line[3], 10)):
-							offset += bit
-							name = line[2] + '[%s]' % i
-							info[offset] = name
-					else:
-						offset = int(line[0], 10)
-						name = line[2]
-						info[offset] = name
+		name=name_format.findall(self.text)
+		if name:
+			#name=[L for L in name if L not in _ignore]
+			name=list(set(name).difference(set(_ignore)))
+			for struct in name:
+				struct_format = re.compile(r'struct %s {.*?;' % struct, re.S)
+				content = struct_format.search(self.text)
+				if content:
+					tmp_dict = {}
+					text = content.group().split('+')
+					for line in text[1:]:
+						line = name_re.findall(line)
+						if line:
+							if len(line) == 5:
+								offset = int(line[0], 10)
+								name = line[2] + '[0]'
+								tmp_dict[offset] = name
+								uint = int(re.search('\d+', line[4]).group(0), 10)
+								bit = uint / 8
+								for i in range(1, int(line[3], 10)):
+									offset += bit
+									name = line[2] + '[%s]' % i
+									tmp_dict[offset] = name
+							else:
+								offset = int(line[0], 10)
+								name = line[2]
+								tmp_dict[offset] = name
+					info[struct]=tmp_dict
+		else:
+			print "No struct name found in %s"%self.file
 		return info
 
 	def efivarstore_parser(self):
 		efivarstore_format = re.compile(r'efivarstore.*?;', re.S)
-		efitxt = efivarstore_format.findall(self.text)
 		struct_re = re.compile(r'efivarstore(.*?),',re.S)
 		name_re = re.compile(r'name=(\w+)')
 		efivarstore_dict={}
+		efitxt = efivarstore_format.findall(self.text)
 		for i in efitxt:
 			struct = struct_re.findall(i.replace(' ',''))
 			name = name_re.findall(i.replace(' ',''))
@@ -69,9 +79,6 @@ class parser_lst(object):
 				print "Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx"
 		return efivarstore_dict
 
-	def matchoffset(self,offset):
-		pass
-
 class mainprocess(object):
 
 	def __init__(self,Guid,Config,Lst,Output):
@@ -79,14 +86,17 @@ class mainprocess(object):
 		self.Config = Config
 		self.Lst = Lst
 		self.Output = Output
+		self.attribute_dict = {'0x3': 'NV, BS', '0x7': 'NV, BS, RT'}
+		self.guid = GUID(self.Guid)
 
-	def mainprocess(self):
+	def main(self):
 		conf=Config(self.Config)
 		config_dict=conf.config_parser() #get {'00':[offset,name,guid,value,attribute]...,'10':....}
 		lst=parser_lst(self.Lst)
+		guid = GUID(self.Guid)
 		efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
-		guid=GUID(self.Guid)
 		keys=sorted(config_dict.keys())
+		all_struct=lst.struct()
 		title_list=[]
 		info_list=[]
 		for id in keys:
@@ -96,8 +106,12 @@ class mainprocess(object):
 				c_offset,c_name,c_guid,c_value,c_attribute = section
 				if efi_dict.has_key(c_name):
 					struct = efi_dict[c_name]
-					title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid.guid_parser(c_guid),attribute_dict[c_attribute])
-					struct_dict = lst.struct_parser(struct) #get{offset:offset_name}
+					title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
+					#struct_dict = lst.struct_parser(struct) #get{offset:offset_name}
+					if all_struct.has_key(struct):
+						struct_dict=all_struct[struct]
+					else:
+						print "Struct %s can found in lst file" %struct
 					if struct_dict.has_key(c_offset):
 						offset_name=struct_dict[c_offset]
 						info = "%s%s.%s|%s\n"%(PCD_NAME,c_name,offset_name,c_value)
@@ -121,7 +135,7 @@ class mainprocess(object):
 		write = write2file(self.Output)
 		write.add2file(statement)
 		conf = Config(self.Config)
-		ids,title,info=self.mainprocess()
+		ids,title,info=self.main()
 		for id in ids:
 			write.add2file(conf.eval_id(id))
 			if title_flag:
@@ -163,36 +177,6 @@ class mainprocess(object):
 				info_list.append(j)
 		return list[0],title_list,info_list
 
-#Parser .lst file,return dict{offset:filename}
-def lst_parser(filename, struct):
-	name_re = re.compile('(\w+)')
-	struct_format = re.compile(r'%s {.*?;' % struct, re.S)
-	efivarstore_format = re.compile(r'efivarstore.*?;', re.S)
-	info = {};alltext = ''
-	for y in filename:
-		with open(y, 'r') as f:
-			read = f.read()
-		alltext +=read  #merge all .lst info
-	#parser struct
-	content = struct_format.search(alltext)
-	if content:
-		text = content.group().split('+')
-		for line in text[1:]:
-			line = name_re.findall(line)
-			if line:
-				if len(line) == 5:
-					offset = int(line[0], 10);name = line[2]+'[0]'
-					info[offset] = name
-					uint=int(re.search('\d+',line[4]).group(0),10)
-					bit=uint/8
-					for i in range(1,int(line[3], 10)):
-						offset += bit;name = line[2]+'[%s]'%i
-						info[offset] = name
-				else:
-					offset = int(line[0], 10);name = line[2]
-					info[offset] = name
-	return info
-
 class Config(object):
 
 	def __init__(self,Config):
@@ -232,14 +216,27 @@ class Config(object):
 		return info_dict
 
 	def eval_id(self,id):
-		len_id=len(id)
 		default_id=id[0:len(id)/2]
 		platform_id=id[len(id)/2:]
 		text=''
-		#info='%s.common.%s.%s,'%(SECTION,platform_id,default_id)
 		for i in range(len(default_id)):
-			text +="%s.common.%s.%s,"%(SECTION,ID_name(platform_id[i],'PLATFORM'),ID_name(default_id[i],'DEFAULT'))
+			text +="%s.common.%s.%s,"%(SECTION,self.ID_name(platform_id[i],'PLATFORM'),self.ID_name(default_id[i],'DEFAULT'))
 		return '\n[%s]\n'%text[:-1]
+
+	def ID_name(self,ID, flag):
+		platform_dict = {'0': 'DEFAULT'}
+		default_dict = {'0': 'STANDARD', '1': 'MANUFACTURING'}
+		if flag == "PLATFORM":
+			try:
+				value = platform_dict[ID]
+			except KeyError:
+				value = 'SKUID%s' % ID
+		elif flag == 'DEFAULT':
+			try:
+				value = default_dict[ID]
+			except KeyError:
+				value = 'DEFAULTID%s' % ID
+		return value
 
 	def section_parser(self,section):
 		offset_re = re.compile(r'offset=(\w+)')
@@ -294,39 +291,30 @@ class GUID(object):
 
 	def __init__(self,guidfile):
 		self.guidfile=guidfile
+		self.guiddict = self.guid_dict()
+
+	def guid_dict(self):
+		guiddict={}
 		with open(self.guidfile,'r') as file:
 			lines = file.readlines()
-		self.guidinfo=lines
-
-	def guid_parser(self,guid):
-		guiddict={}
-		for line in self.guidinfo:
+		guidinfo=lines
+		for line in guidinfo:
 			list=line.strip().split(' ')
 			if list:
 				if len(list)>1:
 					guiddict[list[0].upper()]=list[1]
 				elif list[0] != ''and len(list)==1:
 					print "Error:line %s can't be parser in %s"%(line.strip(),self.guidfile)
-		if guiddict.has_key(guid.upper()):
-			return guiddict[guid.upper()]
+			else:
+				print "No data in %s" %self.guidfile
+		return guiddict
+
+	def guid_parser(self,guid):
+		if self.guiddict.has_key(guid.upper()):
+			return self.guiddict[guid.upper()]
 		else:
 			print  "GUID %s not found in file %s"%(guid, self.guidfile)
 			return guid
-
-def ID_name(ID,flag):
-	platform_dict={'0':'DEFAULT'}
-	default_dict={'0':'STANDARD','1':'MANUFACTURING'}
-	if flag == "PLATFORM":
-		try:
-			value=platform_dict[ID]
-		except KeyError:
-			value = 'SKUID%s'%ID
-	elif flag == 'DEFAULT':
-		try:
-			value= default_dict[ID]
-		except KeyError:
-			value = 'DEFAULTID%s'%ID
-	return value
 
 class write2file(object):
 
@@ -361,8 +349,22 @@ class write2file(object):
 		content=dict.items()
 		return self.__readlist(content)
 
+class duration(object):
+
+	def stamp(self):
+		return datetime.datetime.now()
+
+	def dtime(self,start,end,id=None):
+		if id:
+			pass
+			print "%s time:%s" % (id,str(end - start))
+		else:
+			pass
+			print "Total time:%s" %str(end-start)[:-7]
+
 def main():
-	start_time = datetime.datetime.now()
+	stamp=duration()
+	start=stamp.stamp()
 	usage="Script.py [-m <map file>][-l <lst file>/<lst file list>][-c <config file>][-o <output file>]"
 	parser = OptionParser(usage)
 	parser.add_option('-g','--guid',metavar='FILENAME',dest='guid',help="Input the guid file")
@@ -384,9 +386,8 @@ def main():
 			print 'Error command, use -h for help'
 	else:
 		print 'Error command, use -h for help'
-	end_time = datetime.datetime.now()
-	dtime = end_time - start_time
-	print 'Total time:%s'%str(dtime)[:-7]
+	end=stamp.stamp()
+	stamp.dtime(start,end)
 
 if __name__=='__main__':
 	main()
