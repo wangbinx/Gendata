@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/python
-import re,os,datetime,thread
+import re,os,datetime
 from optparse import OptionParser
 
 statement='''[SkuIds]
@@ -12,6 +12,9 @@ statement='''[SkuIds]
 
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
+
+root=os.path.join('C:\\','edk2-lab','Build','DenlowPkgX64','DEBUG_VS2015x86')
+
 
 class parser_lst(object):
 
@@ -45,7 +48,7 @@ class parser_lst(object):
 					for line in text[1:]:
 						line = name_re.findall(line)
 						if line:
-							if len(line) == 5:
+							if len(line) == 5 and line[-1]:
 								offset = int(line[0], 10)
 								name = line[2] + '[0]'
 								tmp_dict[offset] = name
@@ -107,7 +110,6 @@ class mainprocess(object):
 				if efi_dict.has_key(c_name):
 					struct = efi_dict[c_name]
 					title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
-					#struct_dict = lst.struct_parser(struct) #get{offset:offset_name}
 					if all_struct.has_key(struct):
 						struct_dict=all_struct[struct]
 					else:
@@ -119,7 +121,7 @@ class mainprocess(object):
 					else:
 						print "Can't find offset %s with name %s in %s"%(c_offset,c_name,self.Lst)
 				else:
-					print "Can't find name %s in %s"%(c_name,self.Lst)
+					print "Can't find name %s in lst file"%(c_name)
 			tmp_id.append(self.reverse_dict(tmp_info).items())
 			id,tmp_title_list,tmp_info_list = self.read_list(tmp_id)
 			title_list +=tmp_title_list
@@ -362,9 +364,41 @@ class duration(object):
 			pass
 			print "Total time:%s" %str(end-start)[:-7]
 
+class PATH(object):
+
+	def __init__(self,path):
+		self.path=path
+		self.rootdir=self.get_root_dir()
+		self.useful = {}
+		for path in self.rootdir:
+			for o_root, o_dir, o_file in os.walk(os.path.join(path, "OUTPUT"), topdown=True, followlinks=False):
+				for INF in o_file:
+					if os.path.splitext(INF)[1] == '.inf':
+						for l_root, l_dir, l_file in os.walk(os.path.join(path, "DEBUG"), topdown=True,
+															 followlinks=False):
+							for LST in l_file:
+								if os.path.splitext(LST)[1] == '.lst':
+									self.useful[os.path.join(o_root, INF)] = os.path.join(l_root, LST)
+
+	def get_root_dir(self):
+		rootdir=[]
+		for root,dir,file in os.walk(self.path,topdown=True,followlinks=False):
+			if "OUTPUT" in root:
+				updir=root.split("OUTPUT",1)[0]
+				rootdir.append(updir)
+		rootdir=list(set(rootdir))
+		return rootdir
+
+	def inf(self):
+		return self.useful.keys()
+
+	def lst(self):
+		return self.useful.values()
+
 def main():
 	stamp=duration()
 	start=stamp.stamp()
+	lst=PATH(root)
 	usage="Script.py [-m <map file>][-l <lst file>/<lst file list>][-c <config file>][-o <output file>]"
 	parser = OptionParser(usage)
 	parser.add_option('-g','--guid',metavar='FILENAME',dest='guid',help="Input the guid file")
@@ -388,6 +422,20 @@ def main():
 		print 'Error command, use -h for help'
 	end=stamp.stamp()
 	stamp.dtime(start,end)
+	'''
+	if options.guid:
+		if options.config:
+			if options.output:
+				run=mainprocess(options.guid,options.config,lst.lst(),options.output)
+				run.write_all()
+			else:
+				print 'Error command, use -h for help'
+		else:
+			print 'Error command, use -h for help'
+	else:
+		print 'Error command, use -h for help'
+	end=stamp.stamp()
+	stamp.dtime(start,end)'''
 
 if __name__=='__main__':
 	main()
