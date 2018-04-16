@@ -20,15 +20,32 @@ class parser_lst(object):
 
 	def __init__(self,filelist):
 		self.file=filelist
-		self.text=self.megre_lst()
+		self.text=self.megre_lst()[0]
+		self.content=self.megre_lst()[1]
 
 	def megre_lst(self):
 		alltext=''
+		content={}
 		for file in self.file:
 			with open(file,'r') as f:
 				read =f.read()
 			alltext += read
-		return alltext
+			content[file]=read
+		return alltext,content
+
+	def struct_lst(self):
+		structs_file={}
+		_ignore = ['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16','UINT32','UINT64']
+		name_format = re.compile(r'(?<!typedef)\s+struct (\w+) {.*?;', re.S)
+		for i in self.content.keys():
+			structs= name_format.findall(self.content[i])
+			if structs:
+				for j in structs:
+					if j not in _ignore:
+						structs_file[j]=i
+			else:
+				print "%s"%structs
+		return structs_file
 
 	def struct(self):
 		_ignore=['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16', 'UINT32', 'UINT64']
@@ -57,7 +74,7 @@ class parser_lst(object):
 				line = name_re.findall(line)
 				if line:
 					if len(line) == 5:
-						if line[4] :#in ['UINT8', 'UINT16', 'UINT32', 'UINT64']:
+						if line[4]: # in ['UINT8', 'UINT16', 'UINT32', 'UINT64']:
 							offset = int(line[0], 10)
 							name = line[2] + '[0]'
 							tmp_dict[offset] = name
@@ -69,13 +86,17 @@ class parser_lst(object):
 									name = line[2] + '[%s]' % i
 									tmp_dict[offset] = name
 							except AttributeError:
-								pass
+								print line
 					else:
 						offset = int(line[0], 10)
 						name = line[2]
 						tmp_dict[offset] = name
 			info[struct] = tmp_dict
 		return info
+
+	def newf(self,list):
+		pass
+
 
 	def efivarstore_parser(self):
 		efivarstore_format = re.compile(r'efivarstore.*?;', re.S)
@@ -240,7 +261,7 @@ class PATH(object):
 	def __init__(self,path):
 		self.path=path
 		self.rootdir=self.get_root_dir()
-		self.useful = {}
+		self.lstinf = {}
 		for path in self.rootdir:
 			for o_root, o_dir, o_file in os.walk(os.path.join(path, "OUTPUT"), topdown=True, followlinks=False):
 				for INF in o_file:
@@ -249,7 +270,7 @@ class PATH(object):
 															 followlinks=False):
 							for LST in l_file:
 								if os.path.splitext(LST)[1] == '.lst':
-									self.useful[os.path.join(o_root, INF)] = os.path.join(l_root, LST)
+									self.lstinf[os.path.join(l_root, LST)] = os.path.join(o_root, INF)
 
 	def get_root_dir(self):
 		rootdir=[]
@@ -260,18 +281,32 @@ class PATH(object):
 		rootdir=list(set(rootdir))
 		return rootdir
 
-	def inf(self):
-		return self.useful.keys()
+	def lst_inf(self):
+		return self.lstinf
 
-	def lst(self):
-		return self.useful.values()
+	def package(self):
+		pack={}
+		package_re=re.compile(r'Packages\.\w+]\n(.*)',re.S)
+		header_re = re.compile(r'')
+		for i in self.lstinf.values():
+			with open(i,'r') as inf:
+				read=inf.read()
+			section=read.split('[')
+			for j in section:
+				package=package_re.findall(j)
+				if package:
+					pack[i]=package[0]
+		return pack
 
 class mainprocess(object):
 
-	def __init__(self,Guid,Config,Lst,Output):
+	def __init__(self,Path,Guid,Config,Output):
+		self.path = Path
+		LST = PATH(self.path)
+		self.lst_dict = LST.lst_inf()
 		self.Guid = Guid
 		self.Config = Config
-		self.Lst = Lst
+		self.Lst = self.lst_dict.keys()
 		self.Output = Output
 		self.attribute_dict = {'0x3': 'NV, BS', '0x7': 'NV, BS, RT'}
 		self.guid = GUID(self.Guid)
@@ -284,8 +319,10 @@ class mainprocess(object):
 		efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
 		keys=sorted(config_dict.keys())
 		all_struct=lst.struct()
+		stru_lst=lst.struct_lst()
 		title_list=[]
 		info_list=[]
+		header_list=[]
 		for id_key in keys:
 			tmp_id=[id_key] #['00',[(struct,[name...]),(struct,[name...])]]
 			tmp_info={} #{name:struct}
@@ -294,7 +331,10 @@ class mainprocess(object):
 				if efi_dict.has_key(c_name):
 					struct = efi_dict[c_name]
 					title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
+					title2 = '%s%s|{0}|%s|0xFCD00000\n<HeaderFiles>\n XXXXXXXXXXXXXXXX\n<Packages>\n YYYYYYY\n\n' %(PCD_NAME,c_name,struct)
+					header_list.append(title2)
 					if all_struct.has_key(struct):
+						lstfile = stru_lst[struct]
 						struct_dict=all_struct[struct]
 					else:
 						print "Struct %s can't found in lst file" %struct
@@ -310,18 +350,21 @@ class mainprocess(object):
 			id,tmp_title_list,tmp_info_list = self.read_list(tmp_id)
 			title_list +=tmp_title_list
 			info_list.append(tmp_info_list)
+		header_list = self.del_repeat(header_list)
+		print header_list
 		title_all=list(set(title_list))
 		info_list = self.del_repeat(info_list)
-		return keys,title_all,info_list
+		return keys,title_all,info_list,header_list
 
 
 	def write_all(self):
 		title_flag=1
 		info_flag=1
 		write = write2file(self.Output)
-		write.add2file(statement)
 		conf = Config(self.Config)
-		ids,title,info=self.main()
+		ids,title,info,header=self.main()
+		write.add2file(header)
+		write.add2file(statement)
 		for id in ids:
 			write.add2file(conf.eval_id(id))
 			if title_flag:
@@ -336,11 +379,13 @@ class mainprocess(object):
 				else:
 					write.add2file(info[1])
 
-	def del_repeat(self,list):
-		if len(list) == 1:
-			return list
-		elif len(list) == 2:
-			return [list[0],self.__del(list[0],list[1])]
+	def del_repeat(self,List):
+		if len(List) == 1:
+			return List
+		elif len(List) == 2:
+			return [List[0],self.__del(List[0],List[1])]
+		else:
+			return list(set(List))
 
 	def __del(self,list1,list2):
 		return list(set(list2).difference(set(list1)))
@@ -443,7 +488,7 @@ def main():
 	if options.guid:
 		if options.config:
 			if options.output:
-				run = mainprocess(options.guid, options.config, lst.lst(), options.output)
+				run = mainprocess(root, options.guid, options.config, options.output)
 				run.write_all()
 			else:
 				print 'Error command, use -h for help'
@@ -456,3 +501,5 @@ def main():
 
 if __name__ == '__main__':
 	main()
+	#lst =parser_lst(['Advanced.lst'])
+	#print lst.struct_lst()
