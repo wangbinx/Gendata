@@ -15,7 +15,6 @@ PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
 
 root=os.path.join('C:\\','edk2-lab','Build','DenlowPkgX64','DEBUG_VS2015x86')
 
-
 class parser_lst(object):
 
 	def __init__(self,filelist):
@@ -285,36 +284,53 @@ class PATH(object):
 		return self.lstinf
 
 	def package(self):
-		pack={}
+		package={}
 		package_re=re.compile(r'Packages\.\w+]\n(.*)',re.S)
-		header_re = re.compile(r'')
 		for i in self.lstinf.values():
 			with open(i,'r') as inf:
 				read=inf.read()
 			section=read.split('[')
 			for j in section:
-				package=package_re.findall(j)
-				if package:
-					pack[i]=package[0]
-		return pack
+				p=package_re.findall(j)
+				if p:
+					package[i]=p[0]
+		return package
+
+	def header(self,struct):
+		header={}
+		head_re = re.compile(r'} %s;[\s\S\n]+h{1}"'%struct,re.M|re.S)
+		head_re2 = re.compile(r'#line[\s\d]+"(\S+)"')
+		for i in self.lstinf.keys():
+			with open(i,'r') as lst:
+				read = lst.read()
+			h = head_re.findall(read)
+			if h:
+				head=head_re2.findall(h[0])
+				if head:
+					format = head[0].replace('\\\\','\\').replace('/','\\')
+					h_list =format.split('\\')[-2:]
+					head = '\\'.join(h_list)
+					header[struct] = head
+		return header
+
 
 class mainprocess(object):
 
 	def __init__(self,Path,Guid,Config,Output):
 		self.path = Path
-		LST = PATH(self.path)
-		self.lst_dict = LST.lst_inf()
+		self.LST = PATH(self.path)
+		self.lst_dict = self.LST.lst_inf()
 		self.Guid = Guid
 		self.Config = Config
-		self.Lst = self.lst_dict.keys()
 		self.Output = Output
 		self.attribute_dict = {'0x3': 'NV, BS', '0x7': 'NV, BS, RT'}
 		self.guid = GUID(self.Guid)
+		self.header={}
 
 	def main(self):
 		conf=Config(self.Config)
 		config_dict=conf.config_parser() #get {'00':[offset,name,guid,value,attribute]...,'10':....}
-		lst=parser_lst(self.Lst)
+		lst=parser_lst(self.lst_dict.keys())
 		guid = GUID(self.Guid)
 		efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
 		keys=sorted(config_dict.keys())
@@ -323,6 +339,9 @@ class mainprocess(object):
 		title_list=[]
 		info_list=[]
 		header_list=[]
+		for i in stru_lst:
+			tmp = self.LST.header(i)
+			self.header.update(tmp)
 		for id_key in keys:
 			tmp_id=[id_key] #['00',[(struct,[name...]),(struct,[name...])]]
 			tmp_info={} #{name:struct}
@@ -331,11 +350,12 @@ class mainprocess(object):
 				if efi_dict.has_key(c_name):
 					struct = efi_dict[c_name]
 					title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
-					title2 = '%s%s|{0}|%s|0xFCD00000\n<HeaderFiles>\n XXXXXXXXXXXXXXXX\n<Packages>\n YYYYYYY\n\n' %(PCD_NAME,c_name,struct)
-					header_list.append(title2)
 					if all_struct.has_key(struct):
 						lstfile = stru_lst[struct]
 						struct_dict=all_struct[struct]
+						title2 = '%s%s|{0}|%s|0xFCD00000\n <HeaderFiles>\n  %s\n <Packages>\n%s' % (
+						PCD_NAME, c_name, struct, self.header[struct], self.LST.package()[self.lst_dict[lstfile]])
+						header_list.append(title2)
 					else:
 						print "Struct %s can't found in lst file" %struct
 					if struct_dict.has_key(c_offset):
@@ -343,7 +363,7 @@ class mainprocess(object):
 						info = "%s%s.%s|%s\n"%(PCD_NAME,c_name,offset_name,c_value)
 						tmp_info[info]=title
 					else:
-						print "Can't find offset %s with name %s in %s"%(c_offset,c_name,self.Lst)
+						print "Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys())
 				else:
 					print "Can't find name %s in lst file"%(c_name)
 			tmp_id.append(self.reverse_dict(tmp_info).items())
@@ -351,7 +371,6 @@ class mainprocess(object):
 			title_list +=tmp_title_list
 			info_list.append(tmp_info_list)
 		header_list = self.del_repeat(header_list)
-		print header_list
 		title_all=list(set(title_list))
 		info_list = self.del_repeat(info_list)
 		return keys,title_all,info_list,header_list
@@ -501,5 +520,3 @@ def main():
 
 if __name__ == '__main__':
 	main()
-	#lst =parser_lst(['Advanced.lst'])
-	#print lst.struct_lst()
