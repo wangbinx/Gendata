@@ -13,11 +13,12 @@ statement='''[SkuIds]
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
 
-root=os.path.join('C:\\','edk2-lab','Build','DenlowPkgX64','DEBUG_VS2015x86')
+#root=os.path.join('C:\\','edk2-lab','Build','DenlowPkgX64','DEBUG_VS2015x86')
 
 class parser_lst(object):
 
 	def __init__(self,filelist):
+		self._ignore=['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16', 'UINT32', 'UINT64']
 		self.file=filelist
 		self.text=self.megre_lst()[0]
 		self.content=self.megre_lst()[1]
@@ -32,27 +33,25 @@ class parser_lst(object):
 			content[file]=read
 		return alltext,content
 
-	def struct_lst(self):
+	def struct_lst(self):#{struct:lst file}
 		structs_file={}
-		_ignore = ['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16','UINT32','UINT64']
 		name_format = re.compile(r'(?<!typedef)\s+struct (\w+) {.*?;', re.S)
 		for i in self.content.keys():
 			structs= name_format.findall(self.content[i])
 			if structs:
 				for j in structs:
-					if j not in _ignore:
+					if j not in self._ignore:
 						structs_file[j]=i
 			else:
 				print "%s"%structs
 		return structs_file
 
-	def struct(self):
-		_ignore=['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16', 'UINT32', 'UINT64']
+	def struct(self):#struct:{offset:name}
 		name_format = re.compile(r'(?<!typedef)\s+struct (\w+) {.*?;', re.S)
 		name=name_format.findall(self.text)
 		info={}
 		if name:
-			name=list(set(name).difference(set(_ignore)))
+			name=list(set(name).difference(set(self._ignore)))
 			for struct in name:
 				info.update(self.parse_struct_name(struct))
 			return info
@@ -93,8 +92,16 @@ class parser_lst(object):
 			info[struct] = tmp_dict
 		return info
 
-	def newf(self,list):
-		pass
+	def newf(self,line):
+		dict={}
+		if len(line) == 5:
+			pass
+		elif len(line) == 4:
+			offset = int(line[0],10)
+			name = line[2] + '[%s]' % i
+			dict[offset] = name
+
+
 
 
 	def efivarstore_parser(self):
@@ -478,11 +485,11 @@ class duration(object):
 def main():
 	stamp = duration()
 	start = stamp.stamp()
-	lst = PATH(root)
 	usage = "Script.py [-m <map file>][-l <lst file>/<lst file list>][-c <config file>][-o <output file>]"
 	parser = OptionParser(usage)
+	parser.add_option('-p', '--path', metavar='PATH', dest='path', help="Input the build path")
 	parser.add_option('-g', '--guid',metavar='FILENAME', dest='guid', help="Input the guid file")
-	parser.add_option('-l', '--lst',metavar='FILENAME', action='append', dest='lst', help="Input the '.lst' file, if multiple files, please use ',' to split")
+	#parser.add_option('-l', '--lst',metavar='FILENAME', action='append', dest='lst', help="Input the '.lst' file, if multiple files, please use ',' to split")
 	parser.add_option('-c', '--config',metavar='FILENAME', dest='config', help="Input the '.config' file")
 	parser.add_option('-o', '--output', metavar='FILENAME', dest='output')
 	(options, args) = parser.parse_args()
@@ -507,7 +514,7 @@ def main():
 	if options.guid:
 		if options.config:
 			if options.output:
-				run = mainprocess(root, options.guid, options.config, options.output)
+				run = mainprocess(options.path, options.guid, options.config, options.output)
 				run.write_all()
 			else:
 				print 'Error command, use -h for help'
