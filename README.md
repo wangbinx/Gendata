@@ -1,7 +1,7 @@
 # Gendata
 Generation data and create dsc file.
 
-Usage: Script.py [-p <build path>][-g <Guid define file>][-c <config file>][-o <output file>]
+Usage: Script.py [-p build path][-g Guid define file][-c config file][-o output file]
 
 Options:
   -h, --help             show this help message and exit
