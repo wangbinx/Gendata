@@ -2,13 +2,20 @@
 import re,os,datetime
 from optparse import OptionParser
 
-statement='''[SkuIds]
+dscstatement='''[SkuIds]
   0|DEFAULT              # The entry: 0|DEFAULT is reserved and always required.
 
 [DefaultStores]
   0|STANDARD             # UEFI Standard default  0|STANDARD is reserved.
   1|MANUFACTURING        # UEFI Manufacturing default 1|MANUFACTURING is reserved.
 '''
+
+decstatement = '''[Guids]
+  gStructPcdTokenSpaceGuid = {0x3f1406f4, 0x2b, 0x487a, {0x8b, 0x69, 0x74, 0x29, 0x1b, 0x36, 0x16, 0xf4}}
+
+[PcdsFixedAtBuild,PcdsPatchableInModule,PcdsDynamic,PcdsDynamicEx]
+'''
+
 
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
@@ -291,6 +298,7 @@ class PATH(object):
 	def __init__(self,path):
 		self.path=path
 		self.rootdir=self.get_root_dir()
+		self.usefuldir=[]
 		self.lstinf = {}
 		for path in self.rootdir:
 			for o_root, o_dir, o_file in os.walk(os.path.join(path, "OUTPUT"), topdown=True, followlinks=False):
@@ -301,6 +309,7 @@ class PATH(object):
 							for LST in l_file:
 								if os.path.splitext(LST)[1] == '.lst':
 									self.lstinf[os.path.join(l_root, LST)] = os.path.join(o_root, INF)
+									self.usefuldir.append(path)
 
 	def get_root_dir(self):
 		rootdir=[]
@@ -339,23 +348,31 @@ class PATH(object):
 				head=head_re2.findall(h[0])
 				if head:
 					format = head[0].replace('\\\\','/').replace('\\','/')
-					h_list =format.split('/')[-2:]
-					head = '/'.join(h_list)
+					name =format.split('/')[-1]
+					head = self.makefile(name).replace('\\','/')
 					header[struct] = head
 		return header
 
+	def makefile(self,filename):
+		re_format = re.compile(r'Pkg\\(.*%s)'%filename)
+		for i in self.usefuldir:
+			with open(os.path.join(i,'Makefile'),'r') as make:
+				read = make.read()
+			dir = re_format.findall(read)
+			if dir:
+				return dir[0]
 
 class mainprocess(object):
 
-	def __init__(self,Path,Config,Output):
+	def __init__(self,InputPath,Config,OutputPath):
 		self.init = 0xFCD00000
-		self.path = Path
-		self.LST = PATH(self.path)
+		self.inputpath = os.path.abspath(InputPath)
+		self.outputpath = os.path.abspath(OutputPath)
+		self.LST = PATH(self.inputpath)
 		self.lst_dict = self.LST.lst_inf()
 		self.Config = Config
-		self.Output = Output
 		self.attribute_dict = {'0x3': 'NV, BS', '0x7': 'NV, BS, RT'}
-		self.guid = GUID(self.path)
+		self.guid = GUID(self.inputpath)
 		self.header={}
 
 	def main(self):
@@ -412,24 +429,28 @@ class mainprocess(object):
 	def write_all(self):
 		title_flag=1
 		info_flag=1
-		write = write2file(self.Output)
+		if not os.path.isdir(self.outputpath):
+			os.makedirs(self.outputpath)
+		decwrite = write2file(os.path.join(self.outputpath,'StructurePcd.dec'))
+		dscwrite = write2file(os.path.join(self.outputpath,'StructurePcd.dsc'))
 		conf = Config(self.Config)
 		ids,title,info,header=self.main()
-		write.add2file(header)
-		write.add2file(statement)
+		decwrite.add2file(decstatement)
+		decwrite.add2file(header)
+		dscwrite.add2file(dscstatement)
 		for id in ids:
-			write.add2file(conf.eval_id(id))
+			dscwrite.add2file(conf.eval_id(id))
 			if title_flag:
-				write.add2file(title)
+				dscwrite.add2file(title)
 				title_flag=0
 			if len(info) == 1:
-				write.add2file(info)
+				dscwrite.add2file(info)
 			elif len(info) == 2:
 				if info_flag:
-					write.add2file(info[0])
+					dscwrite.add2file(info[0])
 					info_flag =0
 				else:
-					write.add2file(info[1])
+					dscwrite.add2file(info[1])
 
 	def del_repeat(self,List):
 		if len(List) == 1:
@@ -519,20 +540,20 @@ def main():
 	parser = OptionParser(usage)
 	parser.add_option('-p', '--path', metavar='PATH', dest='path', help="Input the build path")
 	parser.add_option('-c', '--config',metavar='FILENAME', dest='config', help="Input the '.config' file")
-	parser.add_option('-o', '--output', metavar='FILENAME', dest='output',help="Output file")
+	parser.add_option('-o', '--output', metavar='PATH', dest='output', help="Output file PATH")
 	(options, args) = parser.parse_args()
 	if options.config:
-		if options.output:
-			if options.path:
+		if options.path:
+			if options.output:
 				run = mainprocess(options.path, options.config, options.output)
 				run.write_all()
-				print "Finished, Output in %s"%options.output
+				print 'Finished, Output files in directory %s'%os.path.abspath(options.output)
 			else:
-				print 'Error command, no build path input, use -h for help'
+				print 'Error command, no output path, use -h for help'
 		else:
-			print 'Error command, no output file, use -h for help'
+			print 'Error command, no build path input, use -h for help'
 	else:
-		print 'Error command, no config file, use -h for help'
+		print 'Error command, no output file, use -h for help'
 	if error:
 		with open("ERROR.log",'wb') as err:
 			for i in error:
