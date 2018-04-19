@@ -10,4 +10,4 @@ Options:
                         
   -c, --config=FILENAME, Input the '.config' file
 
-  -o, --output=FILENAME, Output file
+  -o, --output=PATH,     Output file path
