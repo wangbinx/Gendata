@@ -1,0 +1,31 @@
+[Guids]
+  gStructPcdTokenSpaceGuid = {0x3f1406f4, 0x2b, 0x487a, {0x8b, 0x69, 0x74, 0x29, 0x1b, 0x36, 0x16, 0xf4}}
+
+[PcdsFixedAtBuild,PcdsPatchableInModule,PcdsDynamic,PcdsDynamicEx]
+gStructPcdTokenSpaceGuid.PcdTCG2_VERSION|{0}|TCG2_VERSION|0XFCD00001{
+ <HeaderFiles>
+  Tcg/Tcg2Config/Tcg2ConfigNvData.h
+ <Packages>
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  SecurityPkg/SecurityPkg.dec
+}
+gStructPcdTokenSpaceGuid.PcdSetup|{0}|SYSTEM_CONFIGURATION|0XFCD00002{
+ <HeaderFiles>
+  Include/Guid/SetupVariable.h
+ <Packages>
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  IntelFrameworkModulePkg/IntelFrameworkModulePkg.dec
+  UefiCpuPkg/UefiCpuPkg.dec
+  DenlowPkg/DenlowPkg.dec
+  BroadwellRcPkg/ClientRefCodePkg.dec
+}
+gStructPcdTokenSpaceGuid.PcdTCG2_CONFIGURATION|{0}|TCG2_CONFIGURATION|0XFCD00003{
+ <HeaderFiles>
+  Tcg/Tcg2Config/Tcg2ConfigNvData.h
+ <Packages>
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+  SecurityPkg/SecurityPkg.dec
+}
