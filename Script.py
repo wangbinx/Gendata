@@ -244,9 +244,21 @@ class Config(object):
 #parser Guid file, get guid name form guid value
 class GUID(object):
 
-	def __init__(self,guidfile):
-		self.guidfile=guidfile
+	def __init__(self,path):
+		self.path = path
+		self.guidfile = self.gfile()
 		self.guiddict = self.guid_dict()
+
+	def gfile(self):
+		for root, dir, file in os.walk(self.path, topdown=True, followlinks=False):
+			if 'FV' in dir:
+				gfile = os.path.join(root,'Fv','Guid.xref')
+				if os.path.isfile(gfile):
+					return gfile
+				else:
+					print "ERROR: Guid.xref file not found"
+					error.append("ERROR: Guid.xref file not found")
+					exit()
 
 	def guid_dict(self):
 		guiddict={}
@@ -312,7 +324,7 @@ class PATH(object):
 			for j in section:
 				p=package_re.findall(j)
 				if p:
-					package[i]=p[0]
+					package[i]=p[0].rstrip()
 		return package
 
 	def header(self,struct):
@@ -326,32 +338,30 @@ class PATH(object):
 			if h:
 				head=head_re2.findall(h[0])
 				if head:
-					format = head[0].replace('\\\\','\\').replace('/','\\')
-					h_list =format.split('\\')[-2:]
-					head = '\\'.join(h_list)
+					format = head[0].replace('\\\\','/').replace('\\','/')
+					h_list =format.split('/')[-2:]
+					head = '/'.join(h_list)
 					header[struct] = head
 		return header
 
 
 class mainprocess(object):
 
-	def __init__(self,Path,Guid,Config,Output):
+	def __init__(self,Path,Config,Output):
 		self.init = 0xFCD00000
 		self.path = Path
 		self.LST = PATH(self.path)
 		self.lst_dict = self.LST.lst_inf()
-		self.Guid = Guid
 		self.Config = Config
 		self.Output = Output
 		self.attribute_dict = {'0x3': 'NV, BS', '0x7': 'NV, BS, RT'}
-		self.guid = GUID(self.Guid)
+		self.guid = GUID(self.path)
 		self.header={}
 
 	def main(self):
 		conf=Config(self.Config)
 		config_dict=conf.config_parser() #get {'00':[offset,name,guid,value,attribute]...,'10':....}
 		lst=parser_lst(self.lst_dict.keys())
-		guid = GUID(self.Guid)
 		efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
 		keys=sorted(config_dict.keys())
 		all_struct=lst.struct()
@@ -369,11 +379,11 @@ class mainprocess(object):
 				c_offset,c_name,c_guid,c_value,c_attribute = section
 				if efi_dict.has_key(c_name):
 					struct = efi_dict[c_name]
-					title='%s%s|L"%s"|%s|0x00|%s\n'%(PCD_NAME,c_name,c_name,guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
+					title='%s%s|L"%s"|%s|0x00||%s\n'%(PCD_NAME,c_name,c_name,self.guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
 					if all_struct.has_key(struct):
 						lstfile = stru_lst[struct]
 						struct_dict=all_struct[struct]
-						title2 = '%s%s|{0}|%s|0xFCD00000\n <HeaderFiles>\n  %s\n <Packages>\n%s' % (
+						title2 = '%s%s|{0}|%s|0xFCD00000{\n <HeaderFiles>\n  %s\n <Packages>\n%s\n}\n' % (
 						PCD_NAME, c_name, struct, self.header[struct], self.LST.package()[self.lst_dict[lstfile]])
 						header_list.append(title2)
 					else:
@@ -505,28 +515,24 @@ def dtime(start,end,id=None):
 
 def main():
 	start = stamp()
-	usage = "Script.py [-p <build path>][-g <guid define file>][-c <config file>][-o <output file>]"
+	usage = "Script.py [-p <build path>][-c <config file>][-o <output file>]"
 	parser = OptionParser(usage)
 	parser.add_option('-p', '--path', metavar='PATH', dest='path', help="Input the build path")
-	parser.add_option('-g', '--guid',metavar='FILENAME', dest='guid', help="Input the guid file")
 	parser.add_option('-c', '--config',metavar='FILENAME', dest='config', help="Input the '.config' file")
 	parser.add_option('-o', '--output', metavar='FILENAME', dest='output',help="Output file")
 	(options, args) = parser.parse_args()
-	if options.guid:
-		if options.config:
-			if options.output:
-				if options.path:
-					run = mainprocess(options.path, options.guid, options.config, options.output)
-					run.write_all()
-					print "Finished, Output in %s"%options.output
-				else:
-					print 'Error command, no build path input, use -h for help'
+	if options.config:
+		if options.output:
+			if options.path:
+				run = mainprocess(options.path, options.config, options.output)
+				run.write_all()
+				print "Finished, Output in %s"%options.output
 			else:
-				print 'Error command, no output file, use -h for help'
+				print 'Error command, no build path input, use -h for help'
 		else:
-			print 'Error command, no config file, use -h for help'
+			print 'Error command, no output file, use -h for help'
 	else:
-		print 'Error command,no GUID file, use -h for help'
+		print 'Error command, no config file, use -h for help'
 	if error:
 		with open("ERROR.log",'wb') as err:
 			for i in error:
