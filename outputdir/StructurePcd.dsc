@@ -1,9 +1,15 @@
+[Defines]
+  VPD_TOOL_GUID                  = 8C3D856A-9BE6-468E-850A-24F7A8D38E08
+
 [SkuIds]
   0|DEFAULT              # The entry: 0|DEFAULT is reserved and always required.
 
 [DefaultStores]
   0|STANDARD             # UEFI Standard default  0|STANDARD is reserved.
   1|MANUFACTURING        # UEFI Manufacturing default 1|MANUFACTURING is reserved.
+
+[PcdsDynamicExVpd.common.DEFAULT]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdNvStoreDefaultValueBuffer|*
 
 [PcdsDynamicHii.common.DEFAULT.STANDARD]
 gStructPcdTokenSpaceGuid.PcdSetup|L"Setup"|gEfiSetupVariableGuid|0x00||NV, BS

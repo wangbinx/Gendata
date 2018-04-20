@@ -1,0 +1,4 @@
+[Pcd]
+gStructPcdTokenSpaceGuid.PcdTCG2_CONFIGURATION
+gStructPcdTokenSpaceGuid.PcdTCG2_VERSION
+gStructPcdTokenSpaceGuid.PcdSetup

@@ -2,12 +2,18 @@
 import re,os,datetime
 from optparse import OptionParser
 
-dscstatement='''[SkuIds]
+dscstatement='''[Defines]
+  VPD_TOOL_GUID                  = 8C3D856A-9BE6-468E-850A-24F7A8D38E08
+
+[SkuIds]
   0|DEFAULT              # The entry: 0|DEFAULT is reserved and always required.
 
 [DefaultStores]
   0|STANDARD             # UEFI Standard default  0|STANDARD is reserved.
   1|MANUFACTURING        # UEFI Manufacturing default 1|MANUFACTURING is reserved.
+
+[PcdsDynamicExVpd.common.DEFAULT]
+  gEfiMdeModulePkgTokenSpaceGuid.PcdNvStoreDefaultValueBuffer|*
 '''
 
 decstatement = '''[Guids]
@@ -16,6 +22,8 @@ decstatement = '''[Guids]
 [PcdsFixedAtBuild,PcdsPatchableInModule,PcdsDynamic,PcdsDynamicEx]
 '''
 
+infstatement = '''[Pcd]
+'''
 
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
@@ -386,6 +394,7 @@ class mainprocess(object):
 		title_list=[]
 		info_list=[]
 		header_list=[]
+		inf_list =[]
 		for i in stru_lst:
 			tmp = self.LST.header(i)
 			self.header.update(tmp)
@@ -409,6 +418,8 @@ class mainprocess(object):
 					if struct_dict.has_key(c_offset):
 						offset_name=struct_dict[c_offset]
 						info = "%s%s.%s|%s\n"%(PCD_NAME,c_name,offset_name,c_value)
+						inf = "%s%s\n"%(PCD_NAME,c_name)
+						inf_list.append(inf)
 						tmp_info[info]=title
 					else:
 						print "ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys())
@@ -420,10 +431,11 @@ class mainprocess(object):
 			id,tmp_title_list,tmp_info_list = self.read_list(tmp_id)
 			title_list +=tmp_title_list
 			info_list.append(tmp_info_list)
+		inf_list = self.del_repeat(inf_list)
 		header_list = self.plus(self.del_repeat(header_list))
 		title_all=list(set(title_list))
 		info_list = self.del_repeat(info_list)
-		return keys,title_all,info_list,header_list
+		return keys,title_all,info_list,header_list,inf_list
 
 
 	def write_all(self):
@@ -433,10 +445,13 @@ class mainprocess(object):
 			os.makedirs(self.outputpath)
 		decwrite = write2file(os.path.join(self.outputpath,'StructurePcd.dec'))
 		dscwrite = write2file(os.path.join(self.outputpath,'StructurePcd.dsc'))
+		infwrite = write2file(os.path.join(self.outputpath, 'StructurePcd.inf'))
 		conf = Config(self.Config)
-		ids,title,info,header=self.main()
+		ids,title,info,header,inf=self.main()
 		decwrite.add2file(decstatement)
 		decwrite.add2file(header)
+		infwrite.add2file(infstatement)
+		infwrite.add2file(inf)
 		dscwrite.add2file(dscstatement)
 		for id in ids:
 			dscwrite.add2file(conf.eval_id(id))
