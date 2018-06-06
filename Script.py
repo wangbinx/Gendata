@@ -158,13 +158,14 @@ class Config(object):
 		with open(self.config, 'r') as text:
 			read = text.read()
 		if 'DEFAULT_ID:' in read:
-			all_txt = read.split('DEFAULT')
+			all_txt = read.split('FCEKEY DEFAULT')
 			for i in all_txt[1:]:
 				part = [] #save all infomation for DEFAULT_ID
 				str_id=''
 				ids = ids_re.findall(i.replace(' ',''))
 				for m in ids:
-					str_id +=m
+					str_id +=m+'_'
+				str_id=str_id[:-1]
 				part.append(ids)
 				section = i.split('\nQ') #split with '\nQ ' to get every block
 				part +=self.section_parser(section)
@@ -173,7 +174,7 @@ class Config(object):
 		else:
 			part = []
 			id=('0','0')
-			str_id='00'
+			str_id='0_0'
 			part.append(id)
 			section = read.split('\nQ')
 			part +=self.section_parser(section)
@@ -182,6 +183,7 @@ class Config(object):
 		return info_dict
 
 	def eval_id(self,id):
+		id = id.split("_")
 		default_id=id[0:len(id)/2]
 		platform_id=id[len(id)/2:]
 		text=''
@@ -385,7 +387,7 @@ class mainprocess(object):
 
 	def main(self):
 		conf=Config(self.Config)
-		config_dict=conf.config_parser() #get {'00':[offset,name,guid,value,attribute]...,'10':....}
+		config_dict=conf.config_parser() #get {'0_0':[offset,name,guid,value,attribute]...,'1_0':....}
 		lst=parser_lst(self.lst_dict.keys())
 		efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
 		keys=sorted(config_dict.keys())
@@ -399,7 +401,7 @@ class mainprocess(object):
 			tmp = self.LST.header(i)
 			self.header.update(tmp)
 		for id_key in keys:
-			tmp_id=[id_key] #['00',[(struct,[name...]),(struct,[name...])]]
+			tmp_id=[id_key] #['0_0',[(struct,[name...]),(struct,[name...])]]
 			tmp_info={} #{name:struct}
 			for section in config_dict[id_key]:
 				c_offset,c_name,c_guid,c_value,c_attribute = section
@@ -409,6 +411,7 @@ class mainprocess(object):
 					if all_struct.has_key(struct):
 						lstfile = stru_lst[struct]
 						struct_dict=all_struct[struct]
+						#title2 = 'title2'
 						title2 = '%s%s|{0}|%s|0xFCD00000{\n <HeaderFiles>\n  %s\n <Packages>\n%s\n}\n' % (
 						PCD_NAME, c_name, struct, self.header[struct], self.LST.package()[self.lst_dict[lstfile]])
 						header_list.append(title2)
@@ -435,6 +438,9 @@ class mainprocess(object):
 		header_list = self.plus(self.del_repeat(header_list))
 		title_all=list(set(title_list))
 		info_list = self.del_repeat(info_list)
+		for i in range(len(info_list)-1,-1,-1):
+			if len(info_list[i]) == 0:
+				info_list.remove(info_list[i])
 		return keys,title_all,info_list,header_list,inf_list
 
 
@@ -470,10 +476,21 @@ class mainprocess(object):
 	def del_repeat(self,List):
 		if len(List) == 1:
 			return List
-		elif len(List) == 2:
-			return [List[0],self.__del(List[0],List[1])]
 		else:
-			return list(set(List))
+			if type(List[0]) != type('xxx'):
+				alist=[]
+				for i in range(len(List)):
+					if i == 0:
+						alist.append(List[0])
+					else:
+						plist = []
+						for j in range(i):
+							plist += List[j]
+						alist.append(self.__del(list(set(plist)), List[i]))
+				return alist
+			else:
+				return list(set(List))
+
 
 	def __del(self,list1,list2):
 		return list(set(list2).difference(set(list1)))
@@ -499,10 +516,11 @@ class mainprocess(object):
 	def plus(self,list):
 		nums=[]
 		for i in list:
-			self.init += 1
-			num = "0x%01x" % self.init
-			j=i.replace('0xFCD00000',num.upper())
-			nums.append(j)
+			if type(i) != type([0]):
+				self.init += 1
+				num = "0x%01x" % self.init
+				j=i.replace('0xFCD00000',num.upper())
+				nums.append(j)
 		return nums
 
 class write2file(object):
