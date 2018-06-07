@@ -28,7 +28,8 @@ infstatement = '''[Pcd]
 SECTION='PcdsDynamicHii'
 PCD_NAME='gStructPcdTokenSpaceGuid.Pcd'
 
-error=[]
+WARNING=[]
+ERRORMSG=[]
 
 class parser_lst(object):
 
@@ -104,7 +105,7 @@ class parser_lst(object):
 						info[u[5]]= dict(info[u[5]].items()+unpar[u[5]].items())
 		else:
 			print "ERROR: No struct name found in %s" % self.file
-			error.append("ERROR: No struct name found in %s" % self.file)
+			ERRORMSG.append("ERROR: No struct name found in %s" % self.file)
 		return info
 
 	def nameISstruct(self,line,key_dict):
@@ -116,8 +117,9 @@ class parser_lst(object):
 		if content:
 			s_size = size_re.findall(content.group())[0]
 		else:
+			s_size = '0'
 			print "ERROR: Struct %s not define mTotalSize in lst file" %line[4]
-			error.append("ERROR: Struct %s not define mTotalSize in lst file" %line[4])
+			ERRORMSG.append("ERROR: Struct %s not define mTotalSize in lst file" %line[4])
 		size = int(line[0], 10)
 		for j in range(0, int(line[3], 10)):
 			for k in key_dict.keys():
@@ -141,7 +143,7 @@ class parser_lst(object):
 				efivarstore_dict[name[0]]=struct[0]
 			else:
 				print "ERROR: Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx"
-				error.append("ERROR: Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx")
+				ERRORMSG.append("ERROR: Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx")
 		return efivarstore_dict
 
 class Config(object):
@@ -254,7 +256,6 @@ class Config(object):
 			value = '{%s}' % line[:-1]
 		else:
 			value = "0x%01x" % int(list1[-1], 16)
-		# value = hex(int(list1[-1], 16))  #parser Others
 		return value
 
 
@@ -274,7 +275,7 @@ class GUID(object):
 					return gfile
 				else:
 					print "ERROR: Guid.xref file not found"
-					error.append("ERROR: Guid.xref file not found")
+					ERRORMSG.append("ERROR: Guid.xref file not found")
 					exit()
 
 	def guid_dict(self):
@@ -289,10 +290,10 @@ class GUID(object):
 					guiddict[list[0].upper()]=list[1]
 				elif list[0] != ''and len(list)==1:
 					print "Error: line %s can't be parser in %s"%(line.strip(),self.guidfile)
-					error.append("Error: line %s can't be parser in %s"%(line.strip(),self.guidfile))
+					ERRORMSG.append("Error: line %s can't be parser in %s"%(line.strip(),self.guidfile))
 			else:
 				print "ERROR: No data in %s" %self.guidfile
-				error.append("ERROR: No data in %s" %self.guidfile)
+				ERRORMSG.append("ERROR: No data in %s" %self.guidfile)
 		return guiddict
 
 	def guid_parser(self,guid):
@@ -300,7 +301,7 @@ class GUID(object):
 			return self.guiddict[guid.upper()]
 		else:
 			print "ERROR: GUID %s not found in file %s"%(guid, self.guidfile)
-			error.append("ERROR: GUID %s not found in file %s"%(guid, self.guidfile))
+			ERRORMSG.append("ERROR: GUID %s not found in file %s"%(guid, self.guidfile))
 			return guid
 
 class PATH(object):
@@ -349,7 +350,7 @@ class PATH(object):
 	def header(self,struct):
 		header={}
 		head_re = re.compile(r'} %s;[\s\S\n]+h{1}"'%struct,re.M|re.S)
-		head_re2 = re.compile(r'#line[\s\d]+"(\S+)"')
+		head_re2 = re.compile(r'#line[\s\d]+"(\S+h)"')
 		for i in self.lstinf.keys():
 			with open(i,'r') as lst:
 				read = lst.read()
@@ -364,7 +365,7 @@ class PATH(object):
 		return header
 
 	def makefile(self,filename):
-		re_format = re.compile(r'Pkg\\(.*%s)'%filename)
+		re_format = re.compile(r'DEBUG_DIR.*(?:\S+Pkg)\\(.*%s)'%filename)
 		for i in self.usefuldir:
 			with open(os.path.join(i,'Makefile'),'r') as make:
 				read = make.read()
@@ -411,13 +412,16 @@ class mainprocess(object):
 					if all_struct.has_key(struct):
 						lstfile = stru_lst[struct]
 						struct_dict=all_struct[struct]
-						#title2 = 'title2'
-						title2 = '%s%s|{0}|%s|0xFCD00000{\n <HeaderFiles>\n  %s\n <Packages>\n%s\n}\n' % (
-						PCD_NAME, c_name, struct, self.header[struct], self.LST.package()[self.lst_dict[lstfile]])
+						try:
+							title2 = '%s%s|{0}|%s|0xFCD00000{\n <HeaderFiles>\n  %s\n <Packages>\n%s\n}\n' % (PCD_NAME, c_name, struct, self.header[struct], self.LST.package()[self.lst_dict[lstfile]])
+						except KeyError:
+							WARNING.append("Warning: No <HeaderFiles> for struct %s"%struct)
+							title2 = '%s%s|{0}|%s|0xFCD00000{\n <HeaderFiles>\n  %s\n <Packages>\n%s\n}\n' % (PCD_NAME, c_name, struct, '', self.LST.package()[self.lst_dict[lstfile]])
 						header_list.append(title2)
 					else:
+						struct_dict ={}
 						print "ERROR: Struct %s can't found in lst file" %struct
-						error.append("ERROR: Struct %s can't found in lst file" %struct)
+						ERRORMSG.append("ERROR: Struct %s can't found in lst file" %struct)
 					if struct_dict.has_key(c_offset):
 						offset_name=struct_dict[c_offset]
 						info = "%s%s.%s|%s\n"%(PCD_NAME,c_name,offset_name,c_value)
@@ -426,10 +430,10 @@ class mainprocess(object):
 						tmp_info[info]=title
 					else:
 						print "ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys())
-						error.append("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys()))
+						ERRORMSG.append("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys()))
 				else:
 					print "ERROR: Can't find name %s in lst file"%(c_name)
-					error.append("ERROR: Can't find name %s in lst file"%(c_name))
+					ERRORMSG.append("ERROR: Can't find name %s in lst file"%(c_name))
 			tmp_id.append(self.reverse_dict(tmp_info).items())
 			id,tmp_title_list,tmp_info_list = self.read_list(tmp_id)
 			title_list +=tmp_title_list
@@ -573,7 +577,7 @@ def main():
 	parser = OptionParser(usage)
 	parser.add_option('-p', '--path', metavar='PATH', dest='path', help="Input the build path")
 	parser.add_option('-c', '--config',metavar='FILENAME', dest='config', help="Input the '.config' file")
-	parser.add_option('-o', '--output', metavar='PATH', dest='output', help="Output file PATH")
+	parser.add_option('-o', '--outputdir', metavar='PATH', dest='output', help="Output file dir")
 	(options, args) = parser.parse_args()
 	if options.config:
 		if options.path:
@@ -587,9 +591,14 @@ def main():
 			print 'Error command, no build path input, use -h for help'
 	else:
 		print 'Error command, no output file, use -h for help'
-	if error:
+	if WARNING:
+		warning = list(set(WARNING))
+		for j in warning:
+			print j
+	if ERRORMSG:
+		ERROR = list(set(ERRORMSG))
 		with open("ERROR.log",'wb') as err:
-			for i in error:
+			for i in ERROR:
 				err.write(i+'\n')
 		print "Some error find, error log in ERROR.log"
 	end = stamp()
