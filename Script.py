@@ -1,6 +1,34 @@
 ﻿#!/usr/bin/python
-import re,os,datetime
-from optparse import OptionParser
+## @file
+# Base on Firmware Configuration file generate PCD value from output path and convert to DSC,DEC,INF file.
+#
+# Copyright (c) 2016 - 2018, Intel Corporation. All rights reserved.<BR>
+# This program and the accompanying materials
+# are licensed and made available under the terms and conditions of the BSD License
+# which accompanies this distribution.  The full text of the license may be found at
+# http://opensource.org/licenses/bsd-license.php
+#
+# THE PROGRAM IS DISTRIBUTED UNDER THE BSD LICENSE ON AN "AS IS" BASIS,
+# WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
+#
+
+'''
+PcdConvertScript
+'''
+
+import re
+import os
+import datetime
+import argparse
+
+#
+# Globals for help information
+#
+__prog__        = 'PcdConvertScript'
+__version__     = '%s Version %s' % (__prog__, '0.1 ')
+__copyright__   = 'Copyright (c) 2016 - 2018, Intel Corporation. All rights reserved.'
+__description__ = 'Base on Firmware Configuration file generate PCD value from output path and convert to DSC,DEC,INF file.\n'
+
 
 dscstatement='''[Defines]
   VPD_TOOL_GUID                  = 8C3D856A-9BE6-468E-850A-24F7A8D38E08
@@ -52,14 +80,14 @@ class parser_lst(object):
 	def struct_lst(self):#{struct:lst file}
 		structs_file={}
 		name_format = re.compile(r'(?<!typedef)\s+struct (\w+) {.*?;', re.S)
-		for i in self.content.keys():
+		for i in list(self.content.keys()):
 			structs= name_format.findall(self.content[i])
 			if structs:
 				for j in structs:
 					if j not in self._ignore:
 						structs_file[j]=i
 			else:
-				print "%s"%structs
+				print("%s"%structs)
 		return structs_file
 
 	def struct(self):#struct:{offset:name}
@@ -100,11 +128,11 @@ class parser_lst(object):
 					info[struct] = tmp_dict
 			if len(unparse) != 0:
 				for u in unparse:
-					if u[4] in info.keys():
+					if u[4] in list(info.keys()):
 						unpar = self.nameISstruct(u,info[u[4]])
-						info[u[5]]= dict(info[u[5]].items()+unpar[u[5]].items())
+						info[u[5]]= dict(list(info[u[5]].items())+list(unpar[u[5]].items()))
 		else:
-			print "ERROR: No struct name found in %s" % self.file
+			print("ERROR: No struct name found in %s" % self.file)
 			ERRORMSG.append("ERROR: No struct name found in %s" % self.file)
 		return info
 
@@ -118,11 +146,11 @@ class parser_lst(object):
 			s_size = size_re.findall(content.group())[0]
 		else:
 			s_size = '0'
-			print "ERROR: Struct %s not define mTotalSize in lst file" %line[4]
+			print("ERROR: Struct %s not define mTotalSize in lst file" %line[4])
 			ERRORMSG.append("ERROR: Struct %s not define mTotalSize in lst file" %line[4])
 		size = int(line[0], 10)
 		for j in range(0, int(line[3], 10)):
-			for k in key_dict.keys():
+			for k in list(key_dict.keys()):
 				offset = size  + k
 				name ='%s.%s' %((line[2]+'[%s]'%j),key_dict[k])
 				dict[offset] = name
@@ -142,7 +170,7 @@ class parser_lst(object):
 			if struct and name:
 				efivarstore_dict[name[0]]=struct[0]
 			else:
-				print "ERROR: Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx"
+				print("ERROR: Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx")
 				ERRORMSG.append("ERROR: Can't find Struct or name in lst file, please check have this format:efivarstore XXXX, name=xxxx")
 		return efivarstore_dict
 
@@ -186,8 +214,8 @@ class Config(object):
 
 	def eval_id(self,id):
 		id = id.split("_")
-		default_id=id[0:len(id)/2]
-		platform_id=id[len(id)/2:]
+		default_id=id[0:len(id)//2]
+		platform_id=id[len(id)//2:]
 		text=''
 		for i in range(len(default_id)):
 			text +="%s.common.%s.%s,"%(SECTION,self.id_name(platform_id[i],'PLATFORM'),self.id_name(default_id[i],'DEFAULT'))
@@ -274,7 +302,7 @@ class GUID(object):
 				if os.path.isfile(gfile):
 					return gfile
 				else:
-					print "ERROR: Guid.xref file not found"
+					print("ERROR: Guid.xref file not found")
 					ERRORMSG.append("ERROR: Guid.xref file not found")
 					exit()
 
@@ -289,18 +317,18 @@ class GUID(object):
 				if len(list)>1:
 					guiddict[list[0].upper()]=list[1]
 				elif list[0] != ''and len(list)==1:
-					print "Error: line %s can't be parser in %s"%(line.strip(),self.guidfile)
+					print("Error: line %s can't be parser in %s"%(line.strip(),self.guidfile))
 					ERRORMSG.append("Error: line %s can't be parser in %s"%(line.strip(),self.guidfile))
 			else:
-				print "ERROR: No data in %s" %self.guidfile
+				print("ERROR: No data in %s" %self.guidfile)
 				ERRORMSG.append("ERROR: No data in %s" %self.guidfile)
 		return guiddict
 
 	def guid_parser(self,guid):
-		if self.guiddict.has_key(guid.upper()):
+		if guid.upper() in self.guiddict:
 			return self.guiddict[guid.upper()]
 		else:
-			print "ERROR: GUID %s not found in file %s"%(guid, self.guidfile)
+			print("ERROR: GUID %s not found in file %s"%(guid, self.guidfile))
 			ERRORMSG.append("ERROR: GUID %s not found in file %s"%(guid, self.guidfile))
 			return guid
 
@@ -337,7 +365,7 @@ class PATH(object):
 	def package(self):
 		package={}
 		package_re=re.compile(r'Packages\.\w+]\n(.*)',re.S)
-		for i in self.lstinf.values():
+		for i in list(self.lstinf.values()):
 			with open(i,'r') as inf:
 				read=inf.read()
 			section=read.split('[')
@@ -351,7 +379,7 @@ class PATH(object):
 		header={}
 		head_re = re.compile(r'} %s;[\s\S\n]+h{1}"'%struct,re.M|re.S)
 		head_re2 = re.compile(r'#line[\s\d]+"(\S+h)"')
-		for i in self.lstinf.keys():
+		for i in list(self.lstinf.keys()):
 			with open(i,'r') as lst:
 				read = lst.read()
 			h = head_re.findall(read)
@@ -389,7 +417,7 @@ class mainprocess(object):
 	def main(self):
 		conf=Config(self.Config)
 		config_dict=conf.config_parser() #get {'0_0':[offset,name,guid,value,attribute]...,'1_0':....}
-		lst=parser_lst(self.lst_dict.keys())
+		lst=parser_lst(list(self.lst_dict.keys()))
 		efi_dict=lst.efivarstore_parser() #get {name:struct} form lst file
 		keys=sorted(config_dict.keys())
 		all_struct=lst.struct()
@@ -406,10 +434,10 @@ class mainprocess(object):
 			tmp_info={} #{name:struct}
 			for section in config_dict[id_key]:
 				c_offset,c_name,c_guid,c_value,c_attribute = section
-				if efi_dict.has_key(c_name):
+				if c_name in efi_dict:
 					struct = efi_dict[c_name]
 					title='%s%s|L"%s"|%s|0x00||%s\n'%(PCD_NAME,c_name,c_name,self.guid.guid_parser(c_guid),self.attribute_dict[c_attribute])
-					if all_struct.has_key(struct):
+					if struct in all_struct:
 						lstfile = stru_lst[struct]
 						struct_dict=all_struct[struct]
 						try:
@@ -420,21 +448,21 @@ class mainprocess(object):
 						header_list.append(title2)
 					else:
 						struct_dict ={}
-						print "ERROR: Struct %s can't found in lst file" %struct
+						print("ERROR: Struct %s can't found in lst file" %struct)
 						ERRORMSG.append("ERROR: Struct %s can't found in lst file" %struct)
-					if struct_dict.has_key(c_offset):
+					if c_offset in struct_dict:
 						offset_name=struct_dict[c_offset]
 						info = "%s%s.%s|%s\n"%(PCD_NAME,c_name,offset_name,c_value)
 						inf = "%s%s\n"%(PCD_NAME,c_name)
 						inf_list.append(inf)
 						tmp_info[info]=title
 					else:
-						print "ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys())
-						ERRORMSG.append("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,self.lst_dict.keys()))
+						print("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,list(self.lst_dict.keys())))
+						ERRORMSG.append("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,list(self.lst_dict.keys())))
 				else:
-					print "ERROR: Can't find name %s in lst file"%(c_name)
+					print("ERROR: Can't find name %s in lst file"%(c_name))
 					ERRORMSG.append("ERROR: Can't find name %s in lst file"%(c_name))
-			tmp_id.append(self.reverse_dict(tmp_info).items())
+			tmp_id.append(list(self.reverse_dict(tmp_info).items()))
 			id,tmp_title_list,tmp_info_list = self.read_list(tmp_id)
 			title_list +=tmp_title_list
 			info_list.append(tmp_info_list)
@@ -501,8 +529,8 @@ class mainprocess(object):
 
 	def reverse_dict(self,dict):
 		data={}
-		for i in dict.items():
-			if i[1] not in data.keys():
+		for i in list(dict.items()):
+			if i[1] not in list(data.keys()):
 				data[i[1]]=[i[0]]
 			else:
 				data[i[1]].append(i[0])
@@ -557,7 +585,7 @@ class write2file(object):
 		return self.text
 
 	def __readdict(self,dict):
-		content=dict.items()
+		content=list(dict.items())
 		return self.__readlist(content)
 
 def stamp():
@@ -566,41 +594,44 @@ def stamp():
 def dtime(start,end,id=None):
 	if id:
 		pass
-		print "%s time:%s" % (id,str(end - start))
+		print("%s time:%s" % (id,str(end - start)))
 	else:
-		print "Total time:%s" %str(end-start)[:-7]
+		print("Total time:%s" %str(end-start)[:-7])
 
 
 def main():
 	start = stamp()
-	usage = "Script.py [-p <build path>][-c <config file>][-o <output file>]"
-	parser = OptionParser(usage)
-	parser.add_option('-p', '--path', metavar='PATH', dest='path', help="Input the build path")
-	parser.add_option('-c', '--config',metavar='FILENAME', dest='config', help="Input the '.config' file")
-	parser.add_option('-o', '--outputdir', metavar='PATH', dest='output', help="Output file dir")
-	(options, args) = parser.parse_args()
+	parser = argparse.ArgumentParser(prog = __prog__,
+                                   description = __description__ + __copyright__,
+                                   conflict_handler = 'resolve')
+	parser.add_argument('-v', '--version', action = 'version',version = __version__, help="show program's version number and exit")
+	parser.add_argument('-p', '--path', metavar='PATH', dest='path', help="Input the build path")
+	parser.add_argument('-c', '--config',metavar='FILENAME', dest='config', help="Input the '.config' file")
+	parser.add_argument('-o', '--outputdir', metavar='PATH', dest='output', help="Output file dir")
+	options = parser.parse_args()
 	if options.config:
 		if options.path:
 			if options.output:
 				run = mainprocess(options.path, options.config, options.output)
+				print("Running...")
 				run.write_all()
-				print 'Finished, Output files in directory %s'%os.path.abspath(options.output)
+				print('Finished, Output files in directory %s'%os.path.abspath(options.output))
 			else:
-				print 'Error command, no output path, use -h for help'
+				print('Error command, no output path, use -h for help')
 		else:
-			print 'Error command, no build path input, use -h for help'
+			print('Error command, no build path input, use -h for help')
 	else:
-		print 'Error command, no output file, use -h for help'
+		print('Error command, no output file, use -h for help')
 	if WARNING:
 		warning = list(set(WARNING))
 		for j in warning:
-			print j
+			print(j)
 	if ERRORMSG:
 		ERROR = list(set(ERRORMSG))
 		with open("ERROR.log",'wb') as err:
 			for i in ERROR:
 				err.write(i+'\n')
-		print "Some error find, error log in ERROR.log"
+		print("Some error find, error log in ERROR.log")
 	end = stamp()
 	dtime(start, end)
 
