@@ -393,7 +393,7 @@ class PATH(object):
 		return header
 
 	def makefile(self,filename):
-		re_format = re.compile(r'DEBUG_DIR.*(?:\S+Pkg)\\(.*%s)'%filename)
+		re_format = re.compile(r'DEBUG_DIR.*(?:\S+Pkg)\\(.*\\%s)'%filename)
 		for i in self.usefuldir:
 			with open(os.path.join(i,'Makefile'),'r') as make:
 				read = make.read()
@@ -506,7 +506,7 @@ class mainprocess(object):
 					dscwrite.add2file(info[1])
 
 	def del_repeat(self,List):
-		if len(List) == 1:
+		if len(List) == 1 or len(List) == 0:
 			return List
 		else:
 			if type(List[0]) != type('xxx'):
