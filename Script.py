@@ -62,7 +62,7 @@ ERRORMSG=[]
 class parser_lst(object):
 
 	def __init__(self,filelist):
-		self._ignore=['EFI_HII_REF', 'EFI_HII_TIME', 'EFI_STRING_ID', 'EFI_HII_DATE', 'BOOLEAN', 'UINT8', 'UINT16', 'UINT32', 'UINT64']
+		self._ignore=['BOOLEAN', 'UINT8', 'UINT16', 'UINT32', 'UINT64']
 		self.file=filelist
 		self.text=self.megre_lst()[0]
 		self.content=self.megre_lst()[1]
@@ -91,71 +91,104 @@ class parser_lst(object):
 		return structs_file
 
 	def struct(self):#struct:{offset:name}
-		name_re = re.compile('(\w+)')
+		unit_num = re.compile('(\d+)')
+		offset1_re = re.compile('(\d+)\[')
+		pcdname_num_re = re.compile('\w+\[(\S+)\]')
+		pcdname_re = re.compile('\](.*)\<')
+		pcdname2_re = re.compile('(\w+)\[')
+		uint_re = re.compile('\<(\S+)\>')
 		name_format = re.compile(r'(?<!typedef)\s+struct (\w+) {.*?;', re.S)
 		name=name_format.findall(self.text)
 		info={}
 		unparse=[]
 		if name:
-			name=list(set(name).difference(set(self._ignore)))
+			tmp_n = [n for n in name if n not in self._ignore]
+			name = list(set(tmp_n))
+			name.sort(key = tmp_n.index)
+			name.reverse()
+			#name=list(set(name).difference(set(self._ignore)))
 			for struct in name:
-				s_re = re.compile(r'struct %s :(.*?);'% struct, re.S)
+				s_re = re.compile(r'struct %s :(.*?)};'% struct, re.S)
 				content = s_re.search(self.text)
 				if content:
 					tmp_dict = {}
 					text = content.group().split('+')
 					for line in text[1:]:
-						line = name_re.findall(line)
-						if line:
-							if len(line) == 5:
-								if line[4] in ['UINT8', 'UINT16', 'UINT32', 'UINT64']:
-									offset = int(line[0], 10)
-									t_name = line[2] + '[0]'
-									tmp_dict[offset] = t_name
-									uint = int(re.search('\d+', line[4]).group(0), 10)
-									bit = uint / 8
-									for i in range(1, int(line[3], 10)):
-										offset += bit
-										t_name = line[2] + '[%s]' % i
-										tmp_dict[offset] = t_name
+						offset = offset1_re.findall(line)
+						t_name = pcdname_re.findall(line)
+						uint = uint_re.findall(line)
+						if offset and uint:
+							offset = offset[0]
+							uint = uint[0]
+							if t_name:
+								t_name = t_name[0].strip()
+								if (' ' in t_name) or ("=" in t_name) or (";" in t_name) or("\\" in name) or (t_name ==''):
+									WARNING.append("Warning:Invalid Pcd name '%s' for Offset %s in struct %s" % (t_name,offset, struct))
 								else:
-									line.append(struct)
-									unparse.append(line)
-							else:
-								offset = int(line[0], 10)
-								t_name = line[2]
-								tmp_dict[offset] = t_name
-					info[struct] = tmp_dict
+									if '[' in t_name:
+										if uint in ['UINT8', 'UINT16', 'UINT32', 'UINT64']:
+											offset = int(offset, 10)
+											tmp_name = pcdname2_re.findall(t_name)[0] + '[0]'
+											tmp_dict[offset] = tmp_name
+											pcdname_num = int(pcdname_num_re.findall(t_name)[0],10)
+											uint = int(unit_num.findall(uint)[0],10)
+											bit = uint / 8
+											for i in range(1, pcdname_num):
+												offset += bit
+												tmp_name = pcdname2_re.findall(t_name)[0] + '[%s]' % i
+												tmp_dict[offset] = tmp_name
+										else:
+											tmp_name = pcdname2_re.findall(t_name)[0]
+											pcdname_num = pcdname_num_re.findall(t_name)[0]
+											line = [offset,tmp_name,pcdname_num,uint]
+											line.append(struct)
+											unparse.append(line)
+									else:
+										if uint not in ['UINT8', 'UINT16', 'UINT32', 'UINT64']:
+											line = [offset, t_name, 0, uint]
+											line.append(struct)
+											unparse.append(line)
+										else:
+											offset = int(offset,10)
+											tmp_dict[offset] = t_name
+				info[struct] = tmp_dict
 			if len(unparse) != 0:
 				for u in unparse:
-					if u[4] in list(info.keys()):
-						unpar = self.nameISstruct(u,info[u[4]])
-						info[u[5]]= dict(list(info[u[5]].items())+list(unpar[u[5]].items()))
+					if u[3] in list(info.keys()):
+						unpar = self.nameISstruct(u,info[u[3]])
+						info[u[4]]= dict(list(info[u[4]].items())+list(unpar[u[4]].items()))
 		else:
 			print("ERROR: No struct name found in %s" % self.file)
 			ERRORMSG.append("ERROR: No struct name found in %s" % self.file)
 		return info
 
+
 	def nameISstruct(self,line,key_dict):
 		dict={}
 		dict2={}
-		s_re = re.compile(r'struct %s :(.*?);' % line[4], re.S)
+		s_re = re.compile(r'struct %s :(.*?)};' % line[3], re.S)
 		size_re = re.compile(r'mTotalSize \[(\S+)\]')
 		content = s_re.search(self.text)
 		if content:
 			s_size = size_re.findall(content.group())[0]
 		else:
 			s_size = '0'
-			print("ERROR: Struct %s not define mTotalSize in lst file" %line[4])
-			ERRORMSG.append("ERROR: Struct %s not define mTotalSize in lst file" %line[4])
+			print("ERROR: Struct %s not define mTotalSize in lst file" %line[3])
+			ERRORMSG.append("ERROR: Struct %s not define mTotalSize in lst file" %line[3])
 		size = int(line[0], 10)
-		for j in range(0, int(line[3], 10)):
+		if line[2] != 0:
+			for j in range(0, int(line[2], 10)):
+				for k in list(key_dict.keys()):
+					offset = size  + k
+					name ='%s.%s' %((line[1]+'[%s]'%j),key_dict[k])
+					dict[offset] = name
+				size = int(s_size,16)+size
+		elif line[2] == 0:
 			for k in list(key_dict.keys()):
-				offset = size  + k
-				name ='%s.%s' %((line[2]+'[%s]'%j),key_dict[k])
+				offset = size + k
+				name = '%s.%s' % (line[1], key_dict[k])
 				dict[offset] = name
-			size = int(s_size,16)+size
-		dict2[line[5]] = dict
+		dict2[line[4]] = dict
 		return dict2
 
 	def efivarstore_parser(self):
@@ -275,7 +308,7 @@ class Config(object):
 			line = ''
 			for i in list2:
 				if len(i) % 2 == 0 and len(i) != 2:
-					for m in range(0, len(i) / 2):
+					for m in range(0, len(i) // 2):
 						tmp.append('0x%02x' % (int('0x%s' % i, 16) >> m * 8 & 0xff))
 				else:
 					tmp.append('0x%s' % i)
@@ -457,8 +490,8 @@ class mainprocess(object):
 						inf_list.append(inf)
 						tmp_info[info]=title
 					else:
-						print("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,list(self.lst_dict.keys())))
-						ERRORMSG.append("ERROR: Can't find offset %s with name %s in %s"%(c_offset,c_name,list(self.lst_dict.keys())))
+						print("ERROR: Can't find offset %s with struct name %s"%(c_offset,struct))
+						ERRORMSG.append("ERROR: Can't find offset %s with name %s"%(c_offset,struct))
 				else:
 					print("ERROR: Can't find name %s in lst file"%(c_name))
 					ERRORMSG.append("ERROR: Can't find name %s in lst file"%(c_name))
@@ -615,6 +648,16 @@ def main():
 				run = mainprocess(options.path, options.config, options.output)
 				print("Running...")
 				run.write_all()
+				if WARNING:
+					warning = list(set(WARNING))
+					for j in warning:
+						print(j)
+				if ERRORMSG:
+					ERROR = list(set(ERRORMSG))
+					with open("ERROR.log", 'w+') as error:
+						for i in ERROR:
+							error.write(i + '\n')
+					print("Some error find, error log in ERROR.log")
 				print('Finished, Output files in directory %s'%os.path.abspath(options.output))
 			else:
 				print('Error command, no output path, use -h for help')
@@ -622,16 +665,6 @@ def main():
 			print('Error command, no build path input, use -h for help')
 	else:
 		print('Error command, no output file, use -h for help')
-	if WARNING:
-		warning = list(set(WARNING))
-		for j in warning:
-			print(j)
-	if ERRORMSG:
-		ERROR = list(set(ERRORMSG))
-		with open("ERROR.log",'wb') as err:
-			for i in ERROR:
-				err.write(i+'\n')
-		print("Some error find, error log in ERROR.log")
 	end = stamp()
 	dtime(start, end)
 
