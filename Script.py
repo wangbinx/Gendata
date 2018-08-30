@@ -514,9 +514,9 @@ class mainprocess(object):
 	def remove_bracket(self,List):
 		for i in List:
 			for j in i:
-				if "[" in j:
-					tmp = j.split("|")
-					tmp[0] = tmp[0][:tmp[0].index("[")]
+				tmp = j.split("|")
+				if (('L"' in j) and ("[" in j)) or (tmp[1].strip() == '{0x0, 0x0}'):
+					tmp[0] = tmp[0][:tmp[0].index('[')]
 					List[List.index(i)][i.index(j)] = "|".join(tmp)
 				else:
 					List[List.index(i)][i.index(j)] = j
